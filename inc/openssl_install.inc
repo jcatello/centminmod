@@ -1,3 +1,22 @@
+cmake_alternatives() {
+    if [ ! -f /usr/bin/cmake3 ]; then
+        yum -q -y install cmake3
+    fi
+    if [[ -f /usr/bin/cmake3 && ! "$(alternatives --display cmake | grep 'link currently points to /usr/bin/cmake3')" ]]; then
+      echo
+      echo "setup cmake to cmake3 alternatives mapping"    
+      # Nginx HTTP/3 + Quiche dependency library requires building with cmake version 3+ however
+      # CentOS uses cmake 2.8 and cmake3 3.x binaries which Quiche can't find so need to setup
+      # alternatives to change CentOS system cmake to link to cmake3
+      alternatives --install /usr/local/bin/cmake cmake /usr/bin/cmake 30 --slave /usr/local/bin/ctest ctest /usr/bin/ctest --slave /usr/local/bin/cpack cpack /usr/bin/cpack --slave /usr/local/bin/ccmake ccmake /usr/bin/ccmake --family cmake
+      alternatives --install /usr/local/bin/cmake cmake /usr/bin/cmake3 50 --slave /usr/local/bin/ctest ctest /usr/bin/ctest3 --slave /usr/local/bin/cpack cpack /usr/bin/cpack3 --slave /usr/local/bin/ccmake ccmake /usr/bin/ccmake3 --family cmake
+      alternatives --set cmake /usr/bin/cmake3
+      # alternatives --remove cmake /usr/bin/cmake3
+      echo "cmake --version"
+      cmake --version
+      echo "cmake to cmake3 alternatives mapping complete"
+    fi
+}
 
 opensslpatches() {
   {
@@ -621,7 +640,17 @@ fi # CLOUDFLARE_PATCHSSL
 
 crypto_gcc() {
     if [[ "$CRYPTO_DEVTOOLSETGCC" = [yY] ]]; then
-      if [[ "$DEVTOOLSETEIGHT" = [yY] ]] && [[ -f /opt/gcc8/bin/gcc && -f /opt/gcc8/bin/g++ ]]; then
+      if [[ "$DEVTOOLSETNINE" = [yY] ]] && [[ -f /opt/gcc9/bin/gcc && -f /opt/gcc9/bin/g++ ]]; then
+        source /opt/gcc9/enable
+        CRYPTODEVTOOLSETNINE_FALLTHROUGH=' -Wimplicit-fallthrough=0'
+        CRYPTODEVTOOLSETNINE_EXTRAFLAGS=' -fcode-hoisting -Wno-cast-function-type -Wno-format-extra-args -Wformat=0'
+        which gcc
+        which g++
+        unset CC
+        unset CXX
+        export CC="ccache /opt/gcc9/bin/gcc"
+        export CXX="ccache /opt/gcc9/bin/g++"
+      elif [[ "$DEVTOOLSETEIGHT" = [yY] ]] && [[ -f /opt/gcc8/bin/gcc && -f /opt/gcc8/bin/g++ ]]; then
         source /opt/gcc8/enable
         CRYPTODEVTOOLSETEIGHT_FALLTHROUGH=' -Wimplicit-fallthrough=0'
         CRYPTODEVTOOLSETEIGHT_EXTRAFLAGS=' -fcode-hoisting -Wno-cast-function-type -Wno-format-extra-args -Wformat=0'
@@ -631,7 +660,40 @@ crypto_gcc() {
         unset CXX
         export CC="ccache /opt/gcc8/bin/gcc"
         export CXX="ccache /opt/gcc8/bin/g++"
+      elif [[ "$DEVTOOLSETNINE" = [yY] ]] && [[ ! -f /opt/rh/devtoolset-9/root/usr/bin/gcc || ! -f /opt/rh/devtoolset-9/root/usr/bin/g++ ]]; then
+        scl_install
+        source /opt/rh/devtoolset-9/enable
+        CRYPTODEVTOOLSETNINE_FALLTHROUGH=' -Wimplicit-fallthrough=0'
+        CRYPTODEVTOOLSETNINE_EXTRAFLAGS=' -fcode-hoisting -Wno-cast-function-type -Wno-format-extra-args -Wformat=0'
+        which gcc
+        which g++
+        unset CC
+        unset CXX
+        export CC="ccache /opt/rh/devtoolset-9/root/usr/bin/gcc"
+        export CXX="ccache /opt/rh/devtoolset-9/root/usr/bin/g++"
+      elif [[ "$DEVTOOLSETNINE" = [yY] ]] && [[ -f /opt/rh/devtoolset-9/root/usr/bin/gcc || -f /opt/rh/devtoolset-9/root/usr/bin/g++ ]]; then
+        scl_install
+        source /opt/rh/devtoolset-9/enable
+        CRYPTODEVTOOLSETNINE_FALLTHROUGH=' -Wimplicit-fallthrough=0'
+        CRYPTODEVTOOLSETNINE_EXTRAFLAGS=' -fcode-hoisting -Wno-cast-function-type -Wno-format-extra-args -Wformat=0'
+        which gcc
+        which g++
+        unset CC
+        unset CXX
+        export CC="ccache /opt/rh/devtoolset-9/root/usr/bin/gcc"
+        export CXX="ccache /opt/rh/devtoolset-9/root/usr/bin/g++"
       elif [[ "$DEVTOOLSETEIGHT" = [yY] ]] && [[ ! -f /opt/rh/devtoolset-8/root/usr/bin/gcc || ! -f /opt/rh/devtoolset-8/root/usr/bin/g++ ]]; then
+        scl_install
+        source /opt/rh/devtoolset-8/enable
+        CRYPTODEVTOOLSETEIGHT_FALLTHROUGH=' -Wimplicit-fallthrough=0'
+        CRYPTODEVTOOLSETEIGHT_EXTRAFLAGS=' -fcode-hoisting -Wno-cast-function-type -Wno-format-extra-args -Wformat=0'
+        which gcc
+        which g++
+        unset CC
+        unset CXX
+        export CC="ccache /opt/rh/devtoolset-8/root/usr/bin/gcc"
+        export CXX="ccache /opt/rh/devtoolset-8/root/usr/bin/g++"
+      elif [[ "$DEVTOOLSETEIGHT" = [yY] ]] && [[ -f /opt/rh/devtoolset-8/root/usr/bin/gcc || -f /opt/rh/devtoolset-8/root/usr/bin/g++ ]]; then
         scl_install
         source /opt/rh/devtoolset-8/enable
         CRYPTODEVTOOLSETEIGHT_FALLTHROUGH=' -Wimplicit-fallthrough=0'
@@ -715,7 +777,7 @@ crypto_gcc() {
         
         if [[ "$(uname -m)" = 'x86_64' && "$CPUVENDOR" = 'GenuineIntel' && "$SSECHECK" = '[enabled]' ]]; then
             CCM=64
-            CRYPTOGCC_OPT="-m${CCM} -march=${MARCH_TARGET}${CRYPTODEVTOOLSETSEVEN_FALLTHROUGH}${CRYPTODEVTOOLSETSEVEN_EXTRAFLAGS}${CRYPTODEVTOOLSETEIGHT_FALLTHROUGH}${CRYPTODEVTOOLSETEIGHT_EXTRAFLAGS}"
+            CRYPTOGCC_OPT="-m${CCM} -march=${MARCH_TARGET}${CRYPTODEVTOOLSETSEVEN_FALLTHROUGH}${CRYPTODEVTOOLSETSEVEN_EXTRAFLAGS}${CRYPTODEVTOOLSETEIGHT_FALLTHROUGH}${CRYPTODEVTOOLSETEIGHT_EXTRAFLAGS}${CRYPTODEVTOOLSETNINE_FALLTHROUGH}${CRYPTODEVTOOLSETNINE_EXTRAFLAGS}"
             # if only 1 cpu thread use -O2 to keep compile times sane
             if [[ "$CPUS" = '1' ]]; then
             export CFLAGS="-O2 $CRYPTOGCC_OPT -pipe"
@@ -892,7 +954,7 @@ fi
         if [ ! -f /usr/bin/makedepend ]; then
             time $YUMDNFBIN -q -y install imake${DISABLEREPO_DNF}
         fi
-
+        CLOUDFLARE_ZLIB_OPENSSL='n'
         if [[ "$CLOUDFLARE_ZLIB_OPENSSL" = [yY] && "$CLOUDFLARE_ZLIB" = [yY] && "$(cat /proc/cpuinfo | grep -o 'sse4_2' | uniq)" = 'sse4_2' && "$CHECK_PCLMUL" = 'enabled' && -d /usr/local/zlib-cf ]]; then
             OPENSSL_CFZLIB_OPT=' -I/usr/local/zlib-cf/include -L/usr/local/zlib-cf/lib'
             OPENSSL_CFZLIB_RPATH='/usr/local/zlib-cf:'
@@ -1025,6 +1087,7 @@ fi
         fi
 
         echo "Compiling BoringSSL..."
+        cmake_alternatives
         # cd $DIR_TMP
         pushd "${BORINGSSL_DIR}"
         rm -rf ${BORINGSSL_DIR}/boringssl
@@ -1071,7 +1134,11 @@ fi
         if [ -f "${BORINGSSL_DIR}/boringssl/build/tool/bssl" ]; then
             echo "ln -sf ${BORINGSSL_DIR}/boringssl/build/tool/bssl /usr/local/bin/bssl"
             ln -sf "${BORINGSSL_DIR}/boringssl/build/tool/bssl" /usr/local/bin/bssl
+            mkdir -p /opt/boringssl/bin
+            echo "\cp -af ${BORINGSSL_DIR}/boringssl/build/tool/bssl /opt/boringssl/bin/bssl"
+            \cp -af "${BORINGSSL_DIR}/boringssl/build/tool/bssl" /opt/boringssl/bin/bssl
             ls -lah /usr/local/bin/bssl
+            ls -lah /opt/boringssl/bin/bssl
         fi
         unset TMPDIR
         boringsslinstallendtime=$(TZ=UTC date +%s.%N)

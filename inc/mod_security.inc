@@ -10,8 +10,26 @@ modsecurity_install() {
     echo "build libmodsecurity..."
     # https://github.com/SpiderLabs/ModSecurity/wiki/Compilation-recipes
 
-    # force devtoolset-8 gcc 8+ usage
-      if [[ ! -f /opt/rh/devtoolset-8/root/usr/bin/gcc || ! -f /opt/rh/devtoolset-8/root/usr/bin/g++ ]]; then
+    # force devtoolset-9 gcc 8+ usage
+      if [[ ! -f /opt/rh/devtoolset-9/root/usr/bin/gcc || ! -f /opt/rh/devtoolset-9/root/usr/bin/g++ ]]; then
+        scl_install
+        unset CC
+        unset CXX
+        export CC="ccache gcc"
+        export CXX="ccache g++"
+        # export CFLAGS="-Wimplicit-fallthrough=0"
+        gcc --version
+        g++ --version
+      elif [[ -f /opt/rh/devtoolset-9/root/usr/bin/gcc && -f /opt/rh/devtoolset-9/root/usr/bin/g++ ]]; then
+        source /opt/rh/devtoolset-9/enable
+        unset CC
+        unset CXX
+        export CC="ccache gcc"
+        export CXX="ccache g++"
+        # export CFLAGS="-Wimplicit-fallthrough=0"
+        gcc --version
+        g++ --version
+      elif [[ ! -f /opt/rh/devtoolset-8/root/usr/bin/gcc || ! -f /opt/rh/devtoolset-8/root/usr/bin/g++ ]]; then
         scl_install
         unset CC
         unset CXX
@@ -56,6 +74,11 @@ modsecurity_install() {
       yum -y install lmdb lmdb-devel
     fi
     pushd "$DIR_TMP"
+
+    if [[ ! "$(/usr/local/bin/mmdblookup --version | awk '/version/ {print $3}' | sed -e 's|\.|00|g')" -lt '1004002' ]] || [ ! -f /usr/local/bin/mmdblookup ]; then
+      install_libmaxmindb
+    fi
+    
     rm -rf ModSecurity
     git clone --depth 1 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity
     cd ModSecurity
@@ -104,15 +127,15 @@ modsecurity_install() {
       mv /usr/local/nginx/modsec/modsecurity.conf-recommended /usr/local/nginx/modsec/modsecurity.conf
       # sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /usr/local/nginx/modsec/modsecurity.conf
     fi
-    if [ ! -f "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/crs-setup.conf" ]; then
+    if [ ! -f "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/crs-setup.conf" ]; then
       newowaspver='y'
       pushd "$DIR_TMP"
-      wget "https://github.com/SpiderLabs/owasp-modsecurity-crs/archive/v${MODSECURITY_OWASPVER}.tar.gz"
+      wget -4 "https://github.com/coreruleset/coreruleset/archive/v${MODSECURITY_OWASPVER}.tar.gz"
       tar xvzf "v${MODSECURITY_OWASPVER}.tar.gz"
-      mv "owasp-modsecurity-crs-${MODSECURITY_OWASPVER}" /usr/local/nginx
-      ls -lah "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}"
-      cp "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/crs-setup.conf.example" "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/crs-setup.conf"
-      ls -lah "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/rules/"
+      mv "coreruleset-${MODSECURITY_OWASPVER}" /usr/local/nginx
+      ls -lah "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}"
+      cp "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/crs-setup.conf.example" "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/crs-setup.conf"
+      ls -lah "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/rules/"
       popd
     fi
     if [[ ! -f /usr/local/nginx/modsec/main.conf || "$newowaspver" = [yY] ]]; then
@@ -130,8 +153,8 @@ cat > "/usr/local/nginx/modsec/main.conf" <<EOF
 Include "/usr/local/nginx/modsec/modsecurity.conf"
 
 # OWASP CRS v3 rules
-Include "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/crs-setup.conf"
-Include "/usr/local/nginx/owasp-modsecurity-crs-${MODSECURITY_OWASPVER}/rules/*.conf"
+Include "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/crs-setup.conf"
+Include "/usr/local/nginx/coreruleset-${MODSECURITY_OWASPVER}/rules/*.conf"
 
 # Basic test rule
 SecRule ARGS:testparam "@contains test" "id:1234,deny,status:403"

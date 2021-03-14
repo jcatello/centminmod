@@ -15,7 +15,7 @@ DT=$(date +"%d%m%y-%H%M%S")
 CENTMINLOGDIR='/root/centminlogs'
 CONFIGSCANDIR='/etc/centminmod/php.d'
 DIR_TMP='/svr-setup'
-PHPCURRENTVER=$(php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
+PHPCURRENTVER=$(php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
 FORCE_IPVFOUR='y' # curl/wget commands through script force IPv4
 #############################################################
 
@@ -114,7 +114,7 @@ mcrypt_peclinstall() {
   if [ -f /usr/local/src/centminmod/centmin.sh ]; then
     PHP_MCRYPTPECLVER=$(awk -F "'" '/PHP_MCRYPTPECLVER=/ {print $2}' /usr/local/src/centminmod/centmin.sh)
   else
-    PHP_MCRYPTPECLVER='1.0.1'
+    PHP_MCRYPTPECLVER='1.0.4'
   fi
 
   echo
@@ -122,7 +122,7 @@ mcrypt_peclinstall() {
   echo
   pushd "$DIR_TMP"
   rm -rf mcrypt-*
-  wget "https://pecl.php.net/get/mcrypt-${PHP_MCRYPTPECLVER}.tgz"
+  wget -4 "https://pecl.php.net/get/mcrypt-${PHP_MCRYPTPECLVER}.tgz" --tries=3
   tar xvzf "mcrypt-${PHP_MCRYPTPECLVER}.tgz"
   cd "mcrypt-${PHP_MCRYPTPECLVER}"
   make clean

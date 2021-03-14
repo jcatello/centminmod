@@ -6,11 +6,11 @@ if [ "$IGBINARY_INSTALL" == 'y' ]; then
 if [ "$IGBINARYGIT" == 'y' ]; then
     cd $DIR_TMP
 
-    php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
+    php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
     PHPSEVEN_CHECKVER=$?
     echo $PHPSEVEN_CHECKVER
 
-    if [[ "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.2' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.3' ]]; then
+    if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.2' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.3' ]]; then
 
         IGBINARYSEVEN_LINK='https://github.com/igbinary/igbinary'
         # fallback mirror if official github is down, use gitlab mirror
@@ -154,6 +154,14 @@ if [[ "$DISABLESESSION" = [yY] ]]; then
 # disable it for now
     sed -i 's|^session.serialize_handler=igbinary|;session.serialize_handler=igbinary|' "${CONFIGSCANDIR}/igbinary.ini"
 fi
+
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]] && [ -f "${CONFIGSCANDIR}/igbinary.ini" ]; then
+    #     # disable igbinary on PHP 8.0+ due to segfaulting
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/igbinary.ini due to segfaults" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/igbinary.ini" $boldyellow
+    #     rm -f ${CONFIGSCANDIR}/igbinary.ini
+    #     echo
+    # fi
 
 cmservice php-fpm reload
     fi # PHP_INSTALL=y

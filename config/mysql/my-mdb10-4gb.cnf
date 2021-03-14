@@ -1,5 +1,4 @@
 [client]
-default-character-set=utf8
 socket=/var/lib/mysql/mysql.sock
 
 [mysql]
@@ -26,8 +25,8 @@ innodb=ON
 #skip-archive
 #skip-name-resolve
 #old_passwords
-back_log = 512
-max_connections = 500
+back_log = 350
+max_connections = 350
 key_buffer_size = 256M
 myisam_sort_buffer_size = 256M
 myisam_max_sort_file_size = 2048M

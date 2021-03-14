@@ -1,3 +1,152 @@
+jetpack_ip_whitelist_cronsetup() {
+  if [[ -f /usr/local/src/centminmod/tools/jetpackips.sh && ! -f /usr/local/nginx/conf/jetpack_whitelist_ip.conf ]]; then
+      # block xml-rpc.php completely with whitelist exception for
+      # jetpack wordpress plugin's IP addresses https://jetpack.com/support/hosting-faq/
+      mkdir -p /etc/centminmod/cronjobs/
+      crontab -l > /etc/centminmod/cronjobs/before_jetpack_ip_whitelist_cronjoblist
+      sed -i '/jetpackips/d' /etc/centminmod/cronjobs/before_jetpack_ip_whitelist_cronjoblist
+      echo "11 */12 * * * /usr/local/src/centminmod/tools/jetpackips.sh >/dev/null 2>&1" >> /etc/centminmod/cronjobs/before_jetpack_ip_whitelist_cronjoblist
+      crontab /etc/centminmod/cronjobs/before_jetpack_ip_whitelist_cronjoblist
+      /usr/local/src/centminmod/tools/jetpackips.sh >/dev/null 2>&1
+  fi
+}
+
+update_wpce_map() {
+  if [ -f /usr/local/nginx/conf/wpcacheenabler_map.conf ]; then
+    # fix improper escapped entries
+    if [[ "$(grep '\"' /usr/local/nginx/conf/wpcacheenabler_map.conf)" ]]; then
+      sed -i 's|\\"|"|g' /usr/local/nginx/conf/wpcacheenabler_map.conf
+      if [[ "$(ps aufx | grep nginx | grep -v grep | grep nginx  >/dev/null 2>&1; echo $?)" -eq '0' ]]; then
+        service nginx reload >/dev/null 2>&1
+      fi
+    fi
+  fi
+}
+
+update_cache_enabler_schemefix() {
+  if [[ -d /usr/local/nginx/conf/wpincludes && $(grep 'cache-enabler/\${http_host}\${cache_uri}index' /usr/local/nginx/conf/wpincludes/*/wpcacheenabler_*.conf >/dev/null 2>&1; echo $?) -eq '0' ]]; then
+    touch "${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_cache_enabler_scheme_fix.log"
+    {
+    echo "#########################################################################"
+    echo "Starting Automatic Wordpress Cache Enabler Advanced Cache Config Update"
+    echo "https://community.centminmod.com/threads/20256/"
+    echo
+    } 2>&1 | tee -a "${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_cache_enabler_scheme_fix.log"
+    getce_includes=$(ls /usr/local/nginx/conf/wpincludes/*/wpcacheenabler_*.conf)
+    ce_count=0
+    for f in $getce_includes; do
+      ce_chkold=$(grep 'cache-enabler/\${http_host}\${cache_uri}index' "$f")
+      ce_chknew=$(grep 'cache-enabler/\${http_host}\${cache_uri}\${scheme}-index' "$f")
+      ce_search_chkold=$(grep 'cache-enabler/\${http_host}\${cache_uri_search}index' "$f")
+      ce_search_chknew=$(grep 'cache-enabler/\${http_host}\${cache_uri_search}\${scheme}-index' "$f")
+      if [[ "$ce_chkold" && ! "$ce_chknew" ]] || [[ "$ce_search_chkold" ]]; then
+          {
+          ce_count=$((${ce_count} + 1))
+          getce_domain=$(echo $f | awk -F '/' '{print $7}')
+          getce_plugin_phpfile=$(find /home/nginx/domains/${getce_domain}/public -type f -name "*cache-enabler.php" | grep 'plugins/cache-enabler/cache-enabler.php')
+          if [ -f "${getce_plugin_phpfile}" ]; then
+              getce_ver=$(awk -F ': ' '/Version/ {print $2}' "${getce_plugin_phpfile}")
+              getce_verf=$(awk -F ': ' '/Version/ {print $2}' "${getce_plugin_phpfile}" | awk -F '.' '{print $1"00"$2"00"$3}')
+          fi
+          echo
+          echo "cache enabler plugin $getce_ver ($getce_verf)"
+          echo "cache enabler v1.4.0+ cache format update for $f";
+          echo "backup $f"
+          echo "to ${f}-autobackup"
+          \cp -af "$f" "${f}-autobackup"
+          sed -i 's|cache-enabler/\${http_host}\${cache_uri}index|cache-enabler/\${http_host}\${cache_uri}\${scheme}-index|g' $f;
+          sed -i 's|cache-enabler/\${http_host}\${cache_uri_search}index.html|cache-enabler/\${http_host}\${cache_uri_search}\${scheme}-index.html|g' $f;
+          sed -i 's|cache-enabler/\${http_host\}${check_surl}index.html|cache-enabler/\${http_host\}${check_surl}\${scheme}-index.html|g' $f;
+          grep '\${scheme}' "$f"
+          } 2>&1 >> "${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_cache_enabler_scheme_fix.log"
+      fi
+      echo "ce_count=$ce_count updated: $getce_domain"
+      if [[ "$ce_count" -gt '1' && "$(ps aufx | grep nginx | grep -v grep | grep nginx  >/dev/null 2>&1; echo $?)" -eq '0' ]]; then
+        service nginx reload >/dev/null 2>&1
+      fi
+    done
+    {
+    echo
+    echo "Completed Automatic Wordpress Cache Enabler Advanced Cache Config Update"
+    echo "saved log at ${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_cache_enabler_scheme_fix.log"
+    echo "#########################################################################"
+    } 2>&1 | tee -a "${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_cache_enabler_scheme_fix.log"
+  fi
+}
+
+fix_nasm() {
+  if [[ -f /etc/yum.repos.d/nasm.repo && -f /usr/bin/nasm && "$(yum versionlock list | grep -o nasm)" != 'nasm' ]]; then
+    yum -q versionlock nasm >/dev/null 2>&1
+  fi
+}
+
+imagemagick_heif() {
+  if [[ -f /etc/yum.repos.d/remi.repo && "$IMAGEMAGICK_HEIF" = [yY] && "$CENTOS_SEVEN" = '7' && ! "$(rpm -qa ImageMagick-heic | grep -o 'ImageMagick-heic')" ]]; then
+    echo
+    echo "Install ImageMagick-heic one time only"
+    echo "https://blog.remirepo.net/post/2019/05/22/HEIC-HEIF-images-support"
+    libheif_install
+    yum -q -y install ImageMagick-heic --enablerepo=remi
+    echo "ImageMagick-heic installed"
+    if [[ "$(rpm -qa ImageMagick-heic | grep -o 'ImageMagick-heic')" ]]; then
+      yum -q versionlock delete ImageMagick-heic
+      yum -q versionlock ImageMagick-heic
+    fi
+  elif [[ -f /etc/yum.repos.d/remi.repo && "$IMAGEMAGICK_HEIF" = [yY] && "$CENTOS_SIX" = '6' && ! "$(rpm -qa ImageMagick-heic | grep -o 'ImageMagick-heic')" ]]; then
+    echo
+    echo "Install ImageMagick-heic one time only"
+    echo "https://blog.remirepo.net/post/2019/05/22/HEIC-HEIF-images-support"
+    libheif_install
+    yum -q -y install ImageMagick-heic --enablerepo=remi
+    echo "ImageMagick-heic installed"
+    if [[ "$(rpm -qa ImageMagick-heic | grep -o 'ImageMagick-heic')" ]]; then
+      yum -q versionlock delete ImageMagick-heic
+      yum -q versionlock ImageMagick-heic
+    fi
+  fi
+}
+
+phpmyadmin_composer_fix() {
+  # https://github.com/centminmod/phpmyadmin/commit/fb0fe48d799fcc60b6a807c9dc9fb64412e127a2
+  if [ -f /root/tools/phpmyadmin_update.sh ]; then
+    sed -i 's/^php composer.phar update --no-dev/echo y | php composer.phar update --no-dev/g' /root/tools/phpmyadmin_update.sh
+  fi
+}
+
+phpmyadmin_updater_fix() {
+  if [ -f /root/tools/phpmyadmin_update.sh ]; then
+    if [[ ! "$(grep 'git stash' /root/tools/phpmyadmin_update.sh)" ]]; then
+      # https://community.centminmod.com/threads/phpmyadmin-doesnt-auto-update.20537/#post-86677
+      sed -i 's|^echo "git pull"|echo "git stash"\ngit stash\necho "git pull"|' /root/tools/phpmyadmin_update.sh
+    fi
+  fi
+}
+
+initial_pip_updates() {
+  initialpip=$1
+  if [[ -z "$SKIP_INITIAL_PIP_UPDATES" || "$SKIP_INITIAL_PIP_UPDATES" = 'n' ]] && [ -f /usr/local/src/centminmod/tools/pip-updates.sh ]; then
+    # skip initial_pip_updates    
+    /usr/local/src/centminmod/tools/pip-updates.sh update "$initialpip"
+  fi
+}
+
+update_webp_inc() {
+  if [[ -f /usr/local/nginx/conf/webp.conf && "$(grep -q 'webpok' /usr/local/nginx/conf/webp.conf; echo $?)" -ne '0' ]] && [[ -f /usr/local/src/centminmod/config/nginx/webp.conf && "$(grep -q 'webpok' /usr/local/src/centminmod/config/nginx/webp.conf; echo $?)" -eq '0' ]]; then
+    \cp -af /usr/local/src/centminmod/config/nginx/webp.conf /usr/local/nginx/conf/webp.conf
+    chown nginx:nginx /usr/local/nginx/conf/webp.conf
+    service nginx restart >/dev/null 2>&1
+  fi
+  if [[ ! "$(grep webp.conf /usr/local/nginx/conf/nginx.conf)" ]] && [[ -f /usr/local/nginx/conf/webp.conf && -f /usr/local/src/centminmod/config/nginx/webp.conf ]]; then
+    sed -i 's|\/usr\/local\/nginx\/conf\/geoip.conf;|\/usr\/local\/nginx\/conf\/geoip.conf;\ninclude \/usr\/local\/nginx\/conf\/webp.conf;|g' /usr/local/nginx/conf/nginx.conf
+    service nginx restart >/dev/null 2>&1
+  elif [[ ! "$(grep webp.conf /usr/local/nginx/conf/nginx.conf)" ]] && [[ ! -f /usr/local/nginx/conf/webp.conf && -f /usr/local/src/centminmod/config/nginx/webp.conf ]]; then
+    \cp -af /usr/local/src/centminmod/config/nginx/webp.conf /usr/local/nginx/conf/webp.conf
+    chown nginx:nginx /usr/local/nginx/conf/webp.conf
+    sed -i 's|\/usr\/local\/nginx\/conf\/geoip.conf;|\/usr\/local\/nginx\/conf\/geoip.conf;\ninclude \/usr\/local\/nginx\/conf\/webp.conf;|g' /usr/local/nginx/conf/nginx.conf
+    service nginx restart >/dev/null 2>&1
+  fi
+}
+
 cfauthorigin_cronsetup() {
   if [[ -z "$(crontab -l 2>&1 | grep '\/usr\/local\/src\/centminmod\/tools\/cf-authenticated-origin-cert-update.sh')" && -f "/usr/local/src/centminmod/tools/cf-authenticated-origin-cert-update.sh" ]]; then
     mkdir -p /etc/centminmod/cronjobs/
@@ -171,7 +320,9 @@ redetect_tlsonethree() {
   if [ -f /usr/local/nginx/conf/ssl-include.conf ]; then
     if [[ "$OPENSSL_TLSONETHREE" = [yY] ]]; then
       # Nginx supports TLS 1.3 ssl_protocols directive
-      if [[ "$(grep -w "ssl_protocols  TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl-include.conf)" ]]; then
+      if [[ "$SSL_PROTOCOL_MODERN" = [yY] ]]; then
+        sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl-include.conf
+      elif [[ "$(grep -w "ssl_protocols  TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl-include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl-include.conf
       elif [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2;" /usr/local/nginx/conf/ssl-include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl-include.conf
@@ -181,7 +332,9 @@ redetect_tlsonethree() {
         sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl-include.conf
       fi
     else
-      if [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl-include.conf)" ]]; then
+      if [[ "$SSL_PROTOCOL_MODERN" = [yY] ]]; then
+        sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2;|" /usr/local/nginx/conf/ssl-include.conf
+      elif [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl-include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2;|" /usr/local/nginx/conf/ssl-include.conf
       elif [[ "$(grep -w 'ssl_protocols  TLSv1.1 TLSv1.2 TLSv1.3;' /usr/local/nginx/conf/ssl-include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.1 TLSv1.2;|" /usr/local/nginx/conf/ssl-include.conf
@@ -192,7 +345,9 @@ redetect_tlsonethree() {
   elif [ -f /usr/local/nginx/conf/ssl_include.conf ]; then
     if [[ "$OPENSSL_TLSONETHREE" = [yY] ]]; then
       # Nginx supports TLS 1.3 ssl_protocols directive
-      if [[ "$(grep -w "ssl_protocols  TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl_include.conf)" ]]; then
+      if [[ "$SSL_PROTOCOL_MODERN" = [yY] ]]; then
+        sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl_include.conf
+      elif [[ "$(grep -w "ssl_protocols  TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl_include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl_include.conf
       elif [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2;" /usr/local/nginx/conf/ssl_include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl_include.conf
@@ -202,7 +357,9 @@ redetect_tlsonethree() {
         sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2 TLSv1.3;|" /usr/local/nginx/conf/ssl_include.conf
       fi
     else
-      if [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl_include.conf)" ]]; then
+      if [[ "$SSL_PROTOCOL_MODERN" = [yY] ]]; then
+        sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.2;|" /usr/local/nginx/conf/ssl_include.conf
+      elif [[ "$(grep -w "ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2 TLSv1.3;" /usr/local/nginx/conf/ssl_include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  ${TLSONEONEPROTOCOL_OPT}TLSv1.1 TLSv1.2;|" /usr/local/nginx/conf/ssl_include.conf
       elif [[ "$(grep -w 'ssl_protocols  TLSv1.1 TLSv1.2 TLSv1.3;' /usr/local/nginx/conf/ssl_include.conf)" ]]; then
         sed -i "s|ssl_protocols .*|ssl_protocols  TLSv1.1 TLSv1.2;|" /usr/local/nginx/conf/ssl_include.conf
@@ -242,6 +399,12 @@ csf_loadalert() {
         csf --profile backup cmm-before-ptload-action >/dev/null 2>&1
         sed -i "s|^PT_LOAD_ACTION = \"\"|PT_LOAD_ACTION = \"\/etc\/csf\/load.sh\"|" /etc/csf/csf.conf
         sed -i "s/^PT_LOAD_LEVEL .*/PT_LOAD_LEVEL = \"$(nproc)\"/g" /etc/csf/csf.conf
+    fi
+    if [[ -f /etc/csf/load.sh && -f "${SCRIPT_DIR}/config/csf/load.sh" ]]; then
+      if [ ! "$(grep 'EMAILNOTIFY_SES' /etc/csf/load.sh)" ]; then
+        # updated load.sh with AWS SES supported tools/emailnotify.sh routine
+        \cp -fa "${SCRIPT_DIR}/config/csf/load.sh" /etc/csf/load.sh
+      fi
     fi
 }
 
@@ -317,7 +480,10 @@ pip_updates() {
     if [[ ! -f /usr/bin/python-config ]]; then
       $YUMDNFBIN -q -y install python-devel
     fi
-    if [[ "$CENTOS_SEVEN" -eq '7' && ! -f /usr/lib/python2.7/site-packages/urllib3/packages/ssl_match_hostname ]]; then
+    if [[ -d /usr/local/lib/python3.6/site-packages/pip && "$(pip --version | grep -o 'python3.6')" && ! "$(rpm -qa python3-devel | grep -o 'python3-devel')" ]]; then
+      yum -q -y install python3-devel
+    fi
+    if [[ "$CENTOS_SEVEN" -eq '7' && ! -d /usr/lib/python2.7/site-packages/urllib3/packages/ssl_match_hostname ]]; then
         # $YUMDNFBIN -q -y install python-urllib3 >/dev/null 2>&1
         # yum -q -y versionlock python-urllib3 >/dev/null 2>&1
         if [[ ! "$(grep 'python-urllib3' /etc/yum.conf)" ]]; then
@@ -326,17 +492,27 @@ pip_updates() {
         fi
         export CC='gcc'
         PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade urllib3
-    elif [[ "$CENTOS_SEVEN" -eq '7' && -f /usr/lib/python2.7/site-packages/urllib3/packages/ssl_match_hostname ]]; then
+    elif [[ "$CENTOS_SEVEN" -eq '7' && -d /usr/lib/python2.7/site-packages/urllib3/packages/ssl_match_hostname ]]; then
         CHECK_PIPALL_UPDATES=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip list -o --format columns)
+        CHECK_PIPALL_INSTALLED=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip list --format columns)
         CHECK_PIPURLLIBUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -o urllib3)
         if [[ "$(rpm -qa python-urllib3 | grep -o python-urllib3)" = 'python-urllib3' ]]; then
-          yum -q -y remove python-urllib3 >/dev/null 2>&1
-          yum versionlock delete python-urllib3 >/dev/null 2>&1
+          #yum -q -y remove python-urllib3 >/dev/null 2>&1
+          #yum versionlock delete python-urllib3 >/dev/null 2>&1
+          yum versionlock python-urllib3 cloud-init python-requests >/dev/null 2>&1
           PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq urllib3
         fi
         if [[ ! "$(grep 'python-urllib3' /etc/yum.conf)" ]]; then
           NEW_PYTHONURLLIB_EXCLUDES=$(echo "$(grep '^exclude=' /etc/yum.conf) python-urllib3")
           sed -i "s|^exclude=.*|$NEW_PYTHONURLLIB_EXCLUDES|" /etc/yum.conf
+        fi
+        if [[ ! "$(grep 'cloud-init' /etc/yum.conf)" ]]; then
+          CLOUDINIT_EXCLUDES=$(echo "$(grep '^exclude=' /etc/yum.conf) cloud-init")
+          sed -i "s|^exclude=.*|$CLOUDINIT_EXCLUDES|" /etc/yum.conf
+        fi
+        if [[ ! "$(grep 'python-requests' /etc/yum.conf)" ]]; then
+          PYTHONREQUESTS_EXCLUDES=$(echo "$(grep '^exclude=' /etc/yum.conf) python-requests")
+          sed -i "s|^exclude=.*|$PYTHONREQUESTS_EXCLUDES|" /etc/yum.conf
         fi
         export CC='gcc'
         PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade urllib3
@@ -363,8 +539,9 @@ pip_updates() {
         if [[ "$CENTOS_SIX" -eq '6' && -f "${SCRIPT_DIR}/addons/python27_install.sh" && ! -f /usr/bin/pip2.7 ]]; then
           "${SCRIPT_DIR}/addons/python27_install.sh" install
           PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade pip
+          PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade setuptools
           PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade psutil
-          PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade glances
+          PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade 'glances[cpuinfo,ip,raid]'
           echo
           echo "CentOS 6 python 2.7 compatibility updates completed"
           echo
@@ -383,9 +560,12 @@ pip_updates() {
     fi
     if [[ "$CENTOS_SEVEN" -eq '7' && -f /usr/bin/pip && -f /usr/bin/python-config ]]; then
       CHECK_PIPALL_UPDATES=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip list -o --format columns)
+      CHECK_PIPALL_INSTALLED=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip list --format columns)
       CHECK_PIPUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -o pip)
       CHECK_PSUTILUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -o psutil)
       CHECK_GLANCESUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -io glances)
+      CHECK_PSUTILINSTALL=$(echo "$CHECK_PIPALL_INSTALLED" | grep -o psutil)
+      CHECK_GLANCEINSTALL=$(echo "$CHECK_PIPALL_INSTALLED" | grep -io glances)
       if [[ "$(yum versionlock list | grep 'python2-pip')" ]]; then
         if [[ ! "$(grep 'python2-pip' /etc/yum.conf)" ]]; then
           NEW_PYTHONPIP_EXCLUDES=$(echo "$(grep '^exclude=' /etc/yum.conf) python2-pip")
@@ -401,7 +581,7 @@ pip_updates() {
           sed -i "s|^exclude=.*|$NEW_PYTHONPIP_EXCLUDES|" /etc/yum.conf
         fi
       fi
-      if [[ "$CHECK_PSUTILUPDATE" = 'psutil' ]]; then
+      if [[ "$CHECK_PSUTILUPDATE" = 'psutil' || ! "$CHECK_PSUTILINSTALL" ]]; then
         export CC='gcc'
         if [[ "$(rpm -qa python2-psutil | grep -o python2-psutil)" = 'python2-psutil' ]]; then
           yum -q -y remove python2-psutil >/dev/null 2>&1
@@ -411,18 +591,22 @@ pip_updates() {
             sed -i "s|^exclude=.*|$NEW_PYTHONPSUTIL_EXCLUDES|" /etc/yum.conf
           fi
         fi
+        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade setuptools
         PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade psutil
       fi
-      if [[ "$CHECK_GLANCESUPDATE" = 'Glances' ]]; then
+      if [[ "$CHECK_GLANCESUPDATE" = 'Glances' || ! "$CHECK_GLANCEINSTALL" ]]; then
         export CC='gcc'
-        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade glances
+        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install -qqq --upgrade 'glances[cpuinfo,ip,raid]'
       fi
     fi
     if [[ "$CENTOS_SIX" -eq '6' && -f /usr/bin/pip2.7 && -f /usr/bin/python2.7-config ]]; then
       CHECK_PIPALL_UPDATES=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 list -o --format columns)
+      CHECK_PIPALL_INSTALLED=$(PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 list --format columns)
       CHECK_PIPUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -o pip)
       CHECK_PSUTILUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -o psutil)
       CHECK_GLANCESUPDATE=$(echo "$CHECK_PIPALL_UPDATES" | grep -io glances)
+      CHECK_PSUTILINSTALL=$(echo "$CHECK_PIPALL_INSTALLED" | grep -o psutil)
+      CHECK_GLANCEINSTALL=$(echo "$CHECK_PIPALL_INSTALLED" | grep -io glances)
       if [[ "$(yum versionlock list | grep 'python-pip')" ]]; then
         if [[ ! "$(grep 'python-pip' /etc/yum.conf)" ]]; then
           NEW_PYTHONPIP_EXCLUDES=$(echo "$(grep '^exclude=' /etc/yum.conf) python-pip")
@@ -438,7 +622,7 @@ pip_updates() {
           sed -i "s|^exclude=.*|$NEW_PYTHONPIP_EXCLUDES|" /etc/yum.conf
         fi
       fi
-      if [[ "$CHECK_PSUTILUPDATE" = 'psutil' ]]; then
+      if [[ "$CHECK_PSUTILUPDATE" = 'psutil' || ! "$CHECK_PSUTILINSTALL" ]]; then
         export CC='gcc'
         if [[ "$(rpm -qa python-psutil | grep -o python-psutil)" = 'python-psutil' ]]; then
           yum -q -y remove python-psutil >/dev/null 2>&1
@@ -448,11 +632,12 @@ pip_updates() {
             sed -i "s|^exclude=.*|$NEW_PYTHONPSUTIL_EXCLUDES|" /etc/yum.conf
           fi
         fi
+        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade setuptools
         PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade psutil
       fi
-      if [[ "$CHECK_GLANCESUPDATE" = 'Glances' ]]; then
+      if [[ "$CHECK_GLANCESUPDATE" = 'Glances' || ! "$CHECK_GLANCEINSTALL" ]]; then
         export CC='gcc'
-        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade glances
+        PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip2.7 install -qqq --upgrade 'glances[cpuinfo,ip,raid]'
       fi
     fi
   fi
@@ -471,7 +656,7 @@ march_hostcheck() {
   # cpu models to prevent issues when you switch host nodes with differing 
   # cpu models causing seg faults for nginx and php-fpm
   VPS_ASNCHECK=$(curl -4s https://ipinfo.io/org)
-  if [[ "$(echo "${VPS_ASNCHECK}" | egrep -i -o 'upcloud|linode|digitalocean|vultr|choopa')" && "$MARCH_TARGETNATIVE_ALWAYS" != [yY] ]]; then
+  if [[ "$(echo "${VPS_ASNCHECK}" | egrep -i -o 'upcloud|linode|digitalocean|vultr|choopa|hetzner|frantech|hostus|ramnode|amazon|google|microsoft|mammoth|contabo|netcup')" && "$MARCH_TARGETNATIVE_ALWAYS" != [yY] ]]; then
     MARCH_TARGETNATIVE='n'
     NGX_GSPLITDWARF='n'
     PHP_GSPLITDWARF='n'
@@ -526,8 +711,16 @@ nginxlargefile_fix() {
       sed -i 's|client_body_timeout 60s;|client_body_timeout 10s;|' /usr/local/nginx/conf/nginx.conf
       nginxfix_count=$(($nginxfix_count+1))
     fi
+    if [[ "$(grep -w 'client_body_timeout 10s;' /usr/local/nginx/conf/nginx.conf)" ]]; then
+      sed -i 's|client_body_timeout 10s;|client_body_timeout 30s;|' /usr/local/nginx/conf/nginx.conf
+      nginxfix_count=$(($nginxfix_count+1))
+    fi
     if [[ "$(grep -w 'client_header_timeout  5s;' /usr/local/nginx/conf/nginx.conf)" ]]; then
       sed -i 's|client_header_timeout  5s;|client_header_timeout  10s;|' /usr/local/nginx/conf/nginx.conf
+      nginxfix_count=$(($nginxfix_count+1))
+    fi
+    if [[ "$(grep -w 'client_header_timeout  10s;' /usr/local/nginx/conf/nginx.conf)" ]]; then
+      sed -i 's|client_header_timeout  10s;|client_header_timeout  30s;|' /usr/local/nginx/conf/nginx.conf
       nginxfix_count=$(($nginxfix_count+1))
     fi
     HOME_DISKTYPE=$(df -T /home | tail -1 | awk '{print $2}')
@@ -794,6 +987,10 @@ update_nginxconf() {
     fi
     if [[ "$NGX_KEEPALIVEREQUESTS" -eq '1000' ]]; then
       sed -i 's|keepalive_requests .*|keepalive_requests  5000;|' /usr/local/nginx/conf/nginx.conf
+    fi
+    if [[ "$NGX_KEEPALIVEREQUESTS" -eq '5000' ]]; then
+      # http://hg.nginx.org/nginx/rev/f790816a0e87
+      sed -i 's|keepalive_requests .*|keepalive_requests  50000;|' /usr/local/nginx/conf/nginx.conf
     fi
     if [[ "$NGX_WRKCON" -eq '4096' || "$NGX_WRKCON" -eq '10000' || "$NGX_WRKCON" -eq '50000' || "$NGX_WRKCON" -eq '80000' ]]; then
       sed -i 's|worker_connections .*|worker_connections  100000;|' /usr/local/nginx/conf/nginx.conf
@@ -1443,18 +1640,23 @@ yumupdatechecker() {
       cecho "-------------------------------------------------------------" $boldgreen
       cecho "  Following Updates are available: " $boldyellow
       cecho "-------------------------------------------------------------" $boldgreen
-      if [[ -f /etc/yum.repos.d/remi.repo && -f /etc/yum.repos.d/city-fan.org.repo ]] && [[ -f /usr/bin/php56 || -f /usr/bin/php70 || -f /usr/bin/php71 || -f /usr/bin/php72 || -f /usr/bin/php73 ]]; then
-        yum -q list updates $YYUM_PARAMETER --enablerepo=${YENABLEREPOS}${YUM_EXCLUDE_PYTHON} --disableexcludes=main,remi | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
-        IMAGEMAGICK_UPDATECHECK=$(grep ImageMagick6 "/root/centminlogs/yumcheck-imagemagick6-$DT.txt" >/dev/null 2>&1; echo $?)
-        rm -rf "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
-      elif [[ -f /etc/yum.repos.d/remi.repo || -f /etc/yum.repos.d/city-fan.org.repo ]]; then
-        yum -q list updates $YYUM_PARAMETER --enablerepo=${YENABLEREPOS}${YUM_EXCLUDE_PYTHON} | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
-        IMAGEMAGICK_UPDATECHECK=$(grep ImageMagick6 "/root/centminlogs/yumcheck-imagemagick6-$DT.txt" >/dev/null 2>&1; echo $?)
-        rm -rf "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
+      if [[ "$CENTOS_SIX" = '6' ]]; then
+        REMI_IMAGEMAGICK_PKGNAME='6'
       else
-        yum -q list updates $YYUM_PARAMETER | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
-        IMAGEMAGICK_UPDATECHECK=$(grep ImageMagick6 "/root/centminlogs/yumcheck-imagemagick6-$DT.txt" >/dev/null 2>&1; echo $?)
-        rm -rf "/root/centminlogs/yumcheck-imagemagick6-$DT.txt"
+        REMI_IMAGEMAGICK_PKGNAME=""
+      fi
+      if [[ -f /etc/yum.repos.d/remi.repo && -f /etc/yum.repos.d/city-fan.org.repo ]] && [[ -f /usr/bin/php56 || -f /usr/bin/php70 || -f /usr/bin/php71 || -f /usr/bin/php72 || -f /usr/bin/php73 ]]; then
+        yum -q list updates $YYUM_PARAMETER --enablerepo=${YENABLEREPOS}${YUM_EXCLUDE_PYTHON} --disableexcludes=main,remi | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
+        IMAGEMAGICK_UPDATECHECK=$(grep "ImageMagick${REMI_IMAGEMAGICK_PKGNAME}" "/root/centminlogs/yumcheck-imagemagick-$DT.txt" >/dev/null 2>&1; echo $?)
+        rm -rf "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
+      elif [[ -f /etc/yum.repos.d/remi.repo || -f /etc/yum.repos.d/city-fan.org.repo ]]; then
+        yum -q list updates $YYUM_PARAMETER --enablerepo=${YENABLEREPOS}${YUM_EXCLUDE_PYTHON} | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
+        IMAGEMAGICK_UPDATECHECK=$(grep "ImageMagick${REMI_IMAGEMAGICK_PKGNAME}" "/root/centminlogs/yumcheck-imagemagick-$DT.txt" >/dev/null 2>&1; echo $?)
+        rm -rf "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
+      else
+        yum -q list updates $YYUM_PARAMETER | grep -v 'Updated Packages' | tee "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
+        IMAGEMAGICK_UPDATECHECK=$(grep "ImageMagick${REMI_IMAGEMAGICK_PKGNAME}" "/root/centminlogs/yumcheck-imagemagick-$DT.txt" >/dev/null 2>&1; echo $?)
+        rm -rf "/root/centminlogs/yumcheck-imagemagick-$DT.txt"
       fi
       # cecho "-------------------------------------------------------------" $boldgreen
       echo
@@ -1811,7 +2013,7 @@ dmotdcheck() {
     # echo "if [[ \"\$(id -u)\" = '0' && -f /usr/local/bin/dmotd ]]; then  /usr/local/bin/dmotd; fi" >> /etc/profile.d/dmotd.sh
     echo "if tty -s; then type='interactive'; if [[ \"\$(id -u)\" = '0' && -f /usr/local/bin/dmotd ]]; then /usr/local/bin/dmotd; fi; else type='non-interactive'; fi;" >> /etc/profile.d/dmotd.sh
     echo "if tty -s; then type='interactive'; if [[ \"\$(id -u)\" != '0' && \"\$(id -Gn | grep -wo 'wheel')\" = 'wheel' && -f /usr/local/bin/dmotd ]]; then sudo /usr/local/bin/dmotd; fi; else type='non-interactive'; fi;" >> /etc/profile.d/dmotd.sh
-    echo "if echo \$0 | grep -e ^\\- 2>&1>/dev/null; then login='login'; else login='non-login'; fi;" >> /etc/profile.d/dmotd.sh
+    echo "if echo \$0 | grep -e ^\\- 2>&1 > /dev/null; then login='login'; else login='non-login'; fi;" >> /etc/profile.d/dmotd.sh
     # echo "$type/$login"
   fi
 }
@@ -2025,7 +2227,9 @@ pureftpdupdates() {
     echo "may take a while to create..."
     openssl dhparam -out /etc/ssl/private/pure-ftpd-dhparams.pem 2048 >/dev/null 2>&1
     echo "pure-ftpd: /etc/ssl/private/pure-ftpd-dhparams.pem created"
-    if [[ "$(ps aufx | grep pure-ftpd | grep -v grep | grep pure-ftpd  >/dev/null 2>&1; echo $?)" -eq '0' ]]; then
+    if [[ "$PUREFTPD_DISABLED" != [yY] && "$(ps aufx | grep pure-ftpd | grep -v grep | grep pure-ftpd  >/dev/null 2>&1; echo $?)" -eq '0' ]]; then
+      service pure-ftpd restart >/dev/null 2>&1
+    elif [[ "$PUREFTPD_DISABLED" != [yY] && "$(ps aufx | grep pure-ftpd | grep -v grep | grep pure-ftpd  >/dev/null 2>&1; echo $?)" -ne '0' ]]; then
       service pure-ftpd restart >/dev/null 2>&1
     fi
   fi
@@ -2659,7 +2863,7 @@ remi_tweaks() {
 }
 
 imagick_fixes() {
-  if [[ -f /etc/ImageMagick/policy.xml || -f /etc/ImageMagick6/ImageMagick-6/policy.xml ]]; then
+  if [[ -f /etc/ImageMagick/policy.xml || -f /etc/ImageMagick-6/policy.xml ]]; then
     if [ -f "${SCRIPT_DIR}/tools/imagemagick-fix.sh" ]; then
       "${SCRIPT_DIR}/tools/imagemagick-fix.sh" >/dev/null 2>&1
     fi
@@ -2855,6 +3059,8 @@ csf_portflood
 python_centossix_sclfix
 disable_avahi
 qrencode_setup
+initial_pip_updates initial
+jetpack_ip_whitelist_cronsetup
 
 if [[ "$INITIALINSTALL" != [yY] ]]; then
   march_hostcheck
@@ -2911,7 +3117,10 @@ if [[ "$INITIALINSTALL" != [yY] ]]; then
   check_jemstatsfile
   nginx_mutexoff
   #fixphpfpm_includes
-  fixphpfpm_httpproxy
+  if [[ -z "$SKIP_FIXPHPFPM_HTTPPROXY" || "$SKIP_FIXPHPFPM_HTTPPROXY" = 'n' ]]; then
+    # skip fixphpfpm_httpproxy
+    fixphpfpm_httpproxy
+  fi
   fixlibmysqlclient_symlink
   fixnodejs_epel
   fixnginx_epel
@@ -2923,20 +3132,32 @@ if [[ "$INITIALINSTALL" != [yY] ]]; then
   #fixclamav_epel
   nano_highlight
   checkwoff
-  checkipvsix
-  fixwp_updater
+  if [[ -z "$SKIP_CHECKIPVSIX" || "$SKIP_CHECKIPVSIX" = 'n' ]]; then
+    # skip checkipvsix    
+    checkipvsix
+  fi
+  if [[ -z "$SKIP_FIXWP_UPDATER" || "$SKIP_FIXWP_UPDATER" = 'n' ]]; then
+    # skip fixwp_updater    
+    fixwp_updater
+  fi
   update_nginxconf
   update_cmdshortcuts
   update_initphpfpm
   update_phpfpmconfg
   cityfan_fix
-  libc_fix
+  if [[ -z "$SKIP_LIBC_FIX" || "$SKIP_LIBC_FIX" = 'n' ]]; then
+    # skip libc_fix    
+    libc_fix
+  fi
   varnishfour_setup
   disablelogs
   nginxlargefile_fix
   fix_phperrorlogperm
   crontabdisable_r
-  pip_updates
+  if [[ -z "$SKIP_PIP_UPDATES" || "$SKIP_PIP_UPDATES" = 'n' ]]; then
+    # skip pip_updates    
+    pip_updates
+  fi
   ngx_gzipbuffersfix
   ngx_brotlibuffersfix
   ngxmaster_openfiles
@@ -2957,7 +3178,18 @@ if [[ "$INITIALINSTALL" != [yY] ]]; then
   symlink_setup_mariadb
   pureftpd_symlink_fix
   cfauthorigin_cronsetup
-  csf_maxmind_rego
+  if [[ -z "$SKIP_CSF_MAXMIND_REGO" || "$SKIP_CSF_MAXMIND_REGO" = 'n' ]]; then
+    # skip csf_maxmind_rego    
+    csf_maxmind_rego
+  fi
+  update_webp_inc
+  phpmyadmin_composer_fix
+  phpmyadmin_updater_fix
+  imagemagick_heif
+  fix_nasm
+  update_cache_enabler_schemefix
+  update_wpce_map
+  jetpack_ip_whitelist_cronsetup
 fi
 
 }

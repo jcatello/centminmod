@@ -4,7 +4,7 @@ phpng_download() {
     PHPNG_YES='y'
     PHPNGVER=$PHPMU_ALPHAVER
     # curl check as download url keeps changing between releases
-    REMIURL='https://downloads.php.net/~derick'
+    REMIURL='https://downloads.php.net/~carusogabriel'
     curl -${ipv_forceopt}Is --connect-timeout 5 --max-time 5 "${REMIURL}/php-${PHPNGVER}.tar.xz" | grep 'HTTP\/' | grep '200'
     REMIURL_CURLCHECK=$?
     if [[ "$REMIURL_CURLCHECK" != '0' ]]; then
@@ -179,13 +179,13 @@ phpng_download() {
         echo ""
       fi    
 ####################################################################    
-  elif [[ "$PHPMUVER" = 'NGDEBUG' || "$PHPMUVER" = '5.7' || "$PHPMUVER" = '8.0' ]] && [[ "$(echo $PHPMU_ALPHAVER | cut -c1-10)" != '7.0.0alpha' || "$(echo $PHPMU_ALPHAVER | cut -c1-9)" != '7.0.0beta' || "$(echo $PHPMU_ALPHAVER | cut -c1-7)" != '7.0.0RC' ]]; then
+  elif [[ "$PHPMUVER" = 'NGDEBUG' || "$PHPMUVER" = '5.7' || "$PHPMUVER" = '8.1' ]] && [[ "$(echo $PHPMU_ALPHAVER | cut -c1-10)" != '7.0.0alpha' || "$(echo $PHPMU_ALPHAVER | cut -c1-9)" != '7.0.0beta' || "$(echo $PHPMU_ALPHAVER | cut -c1-7)" != '7.0.0RC' ]]; then
     if [[ "$PHPMUVER" = 'NGDEBUG' ]]; then
       PHPNGVER='NGDEBUG'
     elif [[ "$PHPMUVER" = '5.7' ]]; then
       PHPNGVER='5.7.0'
-    elif [[ "$PHPMUVER" = '8.0' ]]; then
-      PHPNGVER='8.0.0'
+    elif [[ "$PHPMUVER" = '8.1' ]]; then
+      PHPNGVER='8.1.0'
     fi
     cecho "Downloading PHP $PHPMUVER from https://git.php.net/repository/php-src.git" $boldyellow
     cd $DIR_TMP

@@ -27,14 +27,14 @@ DT=$(date +"%d%m%y-%H%M%S")
 branchname='123.09beta01'
 SCRIPT_MAJORVER='1.2.3'
 SCRIPT_MINORVER='09'
-SCRIPT_INCREMENTVER='404'
+SCRIPT_INCREMENTVER='657'
 SCRIPT_VERSIONSHORT="${branchname}"
 SCRIPT_VERSION="${SCRIPT_VERSIONSHORT}.b${SCRIPT_INCREMENTVER}"
-SCRIPT_DATE='31/12/2019'
+SCRIPT_DATE='03/03/2021'
 SCRIPT_AUTHOR='eva2000 (centminmod.com)'
 SCRIPT_MODIFICATION_AUTHOR='eva2000 (centminmod.com)'
 SCRIPT_URL='https://centminmod.com'
-COPYRIGHT="Copyright 2011-2019 CentminMod.com"
+COPYRIGHT="Copyright 2011-2021 CentminMod.com"
 DISCLAIMER='This software is provided "as is" in the hope that it will be useful, but WITHOUT ANY WARRANTY, to the extent permitted by law; without even the implied warranty of MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.'
 
 #####################################################
@@ -47,6 +47,18 @@ DISCLAIMER='This software is provided "as is" in the hope that it will be useful
 # PLEASE MODIFY VALUES BELOW THIS LINE ++++++++++++++++++++++++++++++++++++++
 # Note: Please enter y for yes or n for no.
 #####################################################
+SCRIPT_DIR=$(readlink -f $(dirname ${BASH_SOURCE[0]}))
+
+if [ "$(id -u)" != 0 ]; then
+  echo "script needs to be run as root user" >&2
+  if [ "$(id -Gn | grep -o wheel)" ]; then
+    echo "if using a sudo user, switch to full root first:" >&2
+    echo >&2
+    echo "sudo -i" >&2
+  fi
+  exit 1
+fi
+
 shopt -s expand_aliases
 for g in "" e f; do
     alias ${g}grep="LC_ALL=C ${g}grep"  # speed-up grep, egrep, fgrep
@@ -55,7 +67,7 @@ done
 HN=$(uname -n)
 # Pre-Checks to prevent screw ups
 DIR_TMP='/svr-setup'
-SCRIPT_DIR=$(readlink -f $(dirname ${BASH_SOURCE[0]}))
+CENTMINLOGDIR='/root/centminlogs'
 
 source "inc/memcheck.inc"
 TMPFSLIMIT=2900000
@@ -400,7 +412,7 @@ MARIADB_JEMALLOC='n'
 #####################################################
 # CCACHE Configuration
 CCACHEINSTALL='y'
-CCACHE_VER="3.7.4"
+CCACHE_VER="3.7.12"
 CCACHESIZE='2.5G'
 
 #####################################################
@@ -410,6 +422,7 @@ CCACHESIZE='2.5G'
 # account API key by setting MM_LICENSE_KEY variable 
 # in persistent config file /etc/centminmod/custom_config.inc
 MM_LICENSE_KEY='k0sP8JPgZm6i0sOF'
+MM_CSF_SRC='y'
 
 #####################################################
 # Networking
@@ -447,7 +460,7 @@ DEVTOOLSETSEVEN='n'           # Enable or disable devtoolset-7 GCC 7.1 support i
 DEVTOOLSETEIGHT='y'           # source compiled GCC 8 from latest snapshot builds
 NGINX_DEVTOOLSETGCC='y'       # Use lastest devtoolset even for CentOS 7 nginx compiles
 GENERAL_DEVTOOLSETGCC='n'     # Use lastest devtoolset whereever possible/coded
-CRYPTO_DEVTOOLSETGCC='n'      # Use lastest devtoolset for libressl or openssl compiles
+CRYPTO_DEVTOOLSETGCC='y'      # Use lastest devtoolset for libressl or openssl compiles
 NGX_GSPLITDWARF='y'           # for Nginx compile https://community.centminmod.com/posts/44072/
 PHP_GSPLITDWARF='y'           # for PHP compile https://community.centminmod.com/posts/44072/
 PHP_LTO='n'                   # enable -flto compiler for GCC 4.8.5+ PHP-FPM compiles currently not working with PHP 7.x
@@ -527,7 +540,7 @@ NGINX_HTTPPUSH='n'           # Nginx http/2 push patch https://community.centmin
 NGINX_ZLIBNG='n'             # 64bit OS only for Nginx compiled against zlib-ng https://github.com/Dead2/zlib-ng
 NGINX_MODSECURITY='n'        # modsecurity module support https://github.com/SpiderLabs/ModSecurity/wiki/Reference-Manual#Installation_for_NGINX
 NGINX_MODSECURITY_MAXMIND='y' # modsecurity built with libmaxminddb is failing to compile so disable it in favour of GeoIP legacy
-MODSECURITY_OWASPVER='3.1.1' # owasp modsecurity ruleset https://github.com/SpiderLabs/owasp-modsecurity-crs/releases
+MODSECURITY_OWASPVER='3.3.0' # owasp modsecurity ruleset https://github.com/coreruleset/coreruleset/releases
 NGINX_REALIP='y'             # http://nginx.org/en/docs/http/ngx_http_realip_module.html
 NGINX_RDNS='n'               # https://github.com/flant/nginx-http-rdns
 NGINX_NJS='n'                # nginScript https://www.nginx.com/blog/launching-nginscript-and-looking-ahead/
@@ -574,67 +587,69 @@ NGINX_PASSENGER='n'          # Install Phusion Passenger requires installing add
 NGINX_WEBDAV='n'             # Nginx WebDAV and nginx-dav-ext-module
 NGINX_EXTWEBDAVVER='0.0.3'   # nginx-dav-ext-module version
 NGINX_LIBATOMIC='y'          # Nginx configured with libatomic support
+NGINX_LIBATOMIC_VERSION='7.6.10' # Newer than system default 7.2 for CentOS 7 only https://github.com/ivmai/libatomic_ops/releases
 NGINX_HTTPREDIS='y'          # Nginx redis http://wiki.nginx.org/HttpRedisModule
 NGINX_HTTPREDISVER='0.3.7'   # Nginx redis version
 NGINX_PCREJIT='y'            # Nginx configured with pcre & pcre-jit support
 NGINX_PCRE_DYNAMIC='y'       # compile nginx pcre as dynamic instead of static library
-NGINX_PCREVER='8.43'         # Version of PCRE used for pcre-jit support in Nginx
+NGINX_PCREVER='8.44'         # Version of PCRE used for pcre-jit support in Nginx
 NGINX_ZLIBCUSTOM='y'         # Use custom zlib instead of system version
 NGINX_ZLIBVER='1.2.11'       # http://www.zlib.net/
 NGINX_VIDEO='n'              # control variable when 'y' set for NGINX_SLICE='y', NGINX_RTMP='y', NGINX_FLV='y', NGINX_MP4='y'
 ORESTY_HEADERSMORE='y'       # openresty headers more https://github.com/openresty/headers-more-nginx-module
 ORESTY_HEADERSMOREGIT='n'    # use git master instead of version specific
 NGINX_HEADERSMORE='0.33'
-NGINX_CACHEPURGEVER='2.5'
+NGINX_CACHEPURGEVER='2.5.1'
 NGINX_STICKY='n'             # nginx sticky module https://bitbucket.org/nginx-goodies/nginx-sticky-module-ng
 NGINX_STICKYVER='master'
 NGINX_UPSTREAMCHECK='n'      # nginx upstream check https://github.com/yaoweibin/nginx_upstream_check_module
 NGINX_UPSTREAMCHECKVER='0.3.0'
 NGINX_OPENRESTY='y'          # Agentzh's openresty Nginx modules
-ORESTY_MEMCVER='0.18'        # openresty memc module https://github.com/openresty/memc-nginx-module
-ORESTY_SRCCACHEVER='0.31'    # openresty subrequest cache module https://github.com/openresty/srcache-nginx-module
+ORESTY_MEMCVER='0.19'        # openresty memc module https://github.com/openresty/memc-nginx-module
+ORESTY_SRCCACHEVER='0.32'    # openresty subrequest cache module https://github.com/openresty/srcache-nginx-module
 ORESTY_DEVELKITVER='0.3.0'  # openresty ngx_devel_kit module https://github.com/simpl/ngx_devel_kit
 ORESTY_SETMISCGIT='n'        # use git master instead of version specific
 ORESTY_SETMISC='y'           # openresty set-misc-nginx module https://github.com/openresty/echo-nginx-module
 ORESTY_SETMISCVER='0.32'     # openresty set-misc-nginx module https://github.com/openresty/set-misc-nginx-module
 ORESTY_ECHOGIT='n'           # use git master instead of version specific
-ORESTY_ECHOVER='0.61'        # openresty set-misc-nginx module https://github.com/openresty/echo-nginx-module
+ORESTY_ECHOVER='0.62'        # openresty set-misc-nginx module https://github.com/openresty/echo-nginx-module
 ORESTY_REDISVER='0.15'       # openresty redis2-nginx-module https://github.com/openresty/redis2-nginx-module
 
 LUAJIT_GITINSTALL='y'        # opt to install luajit 2.1 from dev branch http://repo.or.cz/w/luajit-2.0.git/shortlog/refs/heads/v2.1
 LUAJIT_GITINSTALLVER='2.1-agentzh'   # branch version = v2.1 will override ORESTY_LUAGITVER if LUAJIT_GITINSTALL='y'
 
 ORESTY_LUANGINX='n'             # enable or disable or ORESTY_LUA* nginx modules below
-ORESTY_LUANGINXVER='0.10.15'  # openresty lua-nginx-module https://github.com/openresty/lua-nginx-module
+ORESTY_LUANGINXVER='0.10.19'  # openresty lua-nginx-module https://github.com/openresty/lua-nginx-module
 ORESTY_LUAGITVER='2.0.5'        # luagit http://luajit.org/
-ORESTY_LUAMEMCACHEDVER='0.14'   # openresty https://github.com/openresty/lua-resty-memcached
-ORESTY_LUAMYSQLVER='0.21'    # openresty https://github.com/openresty/lua-resty-mysql
-ORESTY_LUAREDISVER='0.27'       # openresty https://github.com/openresty/lua-resty-redis
+ORESTY_LUAMEMCACHEDVER='0.15'   # openresty https://github.com/openresty/lua-resty-memcached
+ORESTY_LUAMYSQLVER='0.23'    # openresty https://github.com/openresty/lua-resty-mysql
+ORESTY_LUAREDISVER='0.29'       # openresty https://github.com/openresty/lua-resty-redis
 ORESTY_LUADNSVER='0.21'         # openresty https://github.com/openresty/lua-resty-dns
 ORESTY_LUAUPLOADVER='0.10'      # openresty https://github.com/openresty/lua-resty-upload
-ORESTY_LUAWEBSOCKETVER='0.07'   # openresty https://github.com/openresty/lua-resty-websocket
+ORESTY_LUAWEBSOCKETVER='0.08'   # openresty https://github.com/openresty/lua-resty-websocket
 ORESTY_LUALOCKVER='0.08'        # openresty https://github.com/openresty/lua-resty-lock
-ORESTY_LUASTRINGVER='0.11rc1'      # openresty https://github.com/openresty/lua-resty-string
+ORESTY_LUASTRINGVER='0.12'      # openresty https://github.com/openresty/lua-resty-string
 ORESTY_LUAREDISPARSERVER='0.13'    # openresty https://github.com/openresty/lua-redis-parser
 ORESTY_LUAUPSTREAMCHECKVER='0.06'  # openresty https://github.com/openresty/lua-resty-upstream-healthcheck
-ORESTY_LUALRUCACHEVER='0.09'       # openresty https://github.com/openresty/lua-resty-lrucache
-ORESTY_LUARESTYCOREVER='0.1.17'    # openresty https://github.com/openresty/lua-resty-core
-ORESTY_LUASTREAMVER='0.0.7'        # https://github.com/openresty/stream-lua-nginx-module
+ORESTY_LUALRUCACHEVER='0.10'       # openresty https://github.com/openresty/lua-resty-lrucache
+ORESTY_LUARESTYCOREVER='0.1.21'    # openresty https://github.com/openresty/lua-resty-core
+ORESTY_LUASTREAMVER='0.0.9'        # https://github.com/openresty/stream-lua-nginx-module
 ORESTY_LUASTREAM='y'               # control https://github.com/openresty/stream-lua-nginx-module
 NGX_LUASTREAM_FORCED='y'           # control stream-lua-nginx enabling for nginx 1.17+
-ORESTY_LUAUPSTREAMVER='0.06'       # openresty https://github.com/openresty/lua-upstream-nginx-module
+ORESTY_LUAUPSTREAMVER='0.07'       # openresty https://github.com/openresty/lua-upstream-nginx-module
 NGX_LUAUPSTREAM='n'                # disable https://github.com/openresty/lua-upstream-nginx-module
 ORESTY_LUALOGGERSOCKETVER='0.1'    # cloudflare openresty https://github.com/cloudflare/lua-resty-logger-socket
 ORESTY_LUACOOKIEVER='master'       # cloudflare openresty https://github.com/cloudflare/lua-resty-cookie
 ORESTY_LUAUPSTREAMCACHEVER='0.1.1' # cloudflare openresty https://github.com/cloudflare/lua-upstream-cache-nginx-module
 NGX_LUAUPSTREAMCACHE='n'           # disable https://github.com/cloudflare/lua-upstream-cache-nginx-module
-LUACJSONVER='2.1.0.7'              # https://github.com/openresty/lua-cjson
+LUACJSONVER='2.1.0.8rc1'              # https://github.com/openresty/lua-cjson
 
 STRIPPHP='y'                 # set 'y' to strip PHP binary to reduce size
 PHP_INSTALL='y'              # Install PHP /w Fast Process Manager
 SWITCH_PHPFPM_SYSTEMD='y'    # Switch to centos 7 systemd php-fpm service file https://community.centminmod.com/threads/16511/
 ZSTD_LOGROTATE_PHPFPM='n'    # initial install only for zstd compressed log rotation community.centminmod.com/threads/16371/
 PHP_PATCH='y'                # Apply PHP patches if they exist
+PHP_MYSQLND_PATCH_FIX='y'    # Apply PHP 7.3 backported mysqlnd patch for MariaDB for PHP <=7.2 https://community.centminmod.com/posts/86953/
 PHP_TUNING='n'               # initial php-fpm install auto tuning
 PHP_HUGEPAGES='n'            # Enable explicit huge pages support for PHP 7 on CentOS 7.x systems
 PHP_CUSTOMSSL='n'            # compile php-fpm against openssl 1.0.2+ or libressl 2.3+ whichever nginx uses
@@ -658,7 +673,7 @@ PHPMAILPARSE='y'             # Disable or Enable PHP mailparse extension
 PHPIONCUBE='n'               # Disable or Enable Ioncube Loader via addons/ioncube.sh
 PHPMSSQL='n'                 # Disable or Enable MSSQL server PHP extension
 PHPTIMEZONEDB='y'            # timezonedb PHP extension updated https://pecl.php.net/package/timezonedb
-PHPTIMEZONEDB_VER='2019.3'   # timezonedb PHP extension version
+PHPTIMEZONEDB_VER='2020.1'   # timezonedb PHP extension version
 PHPMSSQL_ALWAYS='n'          # mssql php extension always install on php recompiles
 PHPEMBED='y'                 # built php with php embed SAPI library support --enable-embed=shared
 
@@ -670,20 +685,20 @@ SUHOSINVER='0.9.38'
 
 PHPREDIS='y'                # redis PHP extension install
 REDISPHP_VER='4.3.0'        # redis PHP version for PHP <7.x
-REDISPHPSEVEN_VER='5.1.1'   # redis PHP version for PHP =>7.x
+REDISPHPSEVEN_VER='5.3.2'   # redis PHP version for PHP =>7.x
 REDISPHP_GIT='n'            # pull php 7 redis extension from git or pecl downloads
 PHPMONGODB='n'              # MongoDB PHP extension install
-MONGODBPHP_VER='1.6.1'      # MongoDB PHP version
+MONGODBPHP_VER='1.7.4'      # MongoDB PHP version
 MONGODB_SASL='n'            # SASL not working yet leave = n
 PDOPGSQL_PHPVER='11'        # pdo-pgsql PHP extension version for postgresql
 PHP_LIBZIP='n'              # use newer libzip instead of PHP embedded zip
 PHP_ARGON='n'               # alias for PHP_LIBZIP, when PHP_ARGON='y' then PHP_LIBZIP='y'
-LIBZIP_VER='1.5.2'          # required for PHP 7.2 + with libsodium & argon2
+LIBZIP_VER='1.7.3'          # required for PHP 7.2 + with libsodium & argon2
 LIBSODIUM_VER='1.0.18'      # https://github.com/jedisct1/libsodium/releases
 LIBSODIUM_NATIVE='n'        # optimise for specific cpu not portable between different cpu modules
 LIBARGON_VER='20171227'     # https://github.com/P-H-C/phc-winner-argon2
 PHP_MCRYPTPECL='y'          # PHP 7.2 deprecated mcrypt support so this adds it back as PECL extension
-PHP_MCRYPTPECLVER='1.0.1'   # https://pecl.php.net/package/mcrypt
+PHP_MCRYPTPECLVER='1.0.4'   # https://pecl.php.net/package/mcrypt
 PHPZOPFLI='n'               # enable zopfli php extension https://github.com/kjdev/php-ext-zopfli
 PHPZOPFLI_ALWAYS='n'        # zopfli php extension always install on php recompiles
 PHP_BROTLI='n'              # brotli php extension https://github.com/kjdev/php-ext-brotli
@@ -695,6 +710,8 @@ SHORTCUTS='y'                # shortcuts
 
 POSTGRESQL='n'               # set to =y to install PostgreSQL 9.6 server, devel packages and pdo-pgsql PHP extension
 POSTGRESQL_BRANCHVER='11'   # PostgresSQL branch version https://www.postgresql.org/ i.e. 9.6, 10 or 11
+
+IMAGEMAGICK_HEIF='n'         # experimental ImageMagick HEIF image format support
 ########################################################
 # Choice of installing MariaDB 5.2 via RPM or via MariaDB 5.2 CentOS YUM Repo
 # If MDB_YUMREPOINSTALL=y and MDB_INSTALL=n then MDB_VERONLY version 
@@ -729,9 +746,11 @@ MYSQL_INSTALL='n'            # Install official Oracle MySQL Server (MariaDB alt
 SENDMAIL_INSTALL='n'         # Install Sendmail (and mailx) set to y and POSTFIX_INSTALL=n for sendmail
 POSTFIX_INSTALL=y            # Install Postfix (and mailx) set to n and SENDMAIL_INSTALL=y for sendmail
 # Nginx
-NGINX_VERSION='1.17.7'       # Use this version of Nginx
+NGINX_VERSION='1.19.6'       # Use this version of Nginx
 NGINX_VHOSTSSL='y'            # enable centmin.sh menu 2 prompt to create self signed SSL vhost 2nd vhost conf
 NGINXBACKUP='y'
+NGINX_STAPLE_CACHE_OVERRIDE='n' # Enable will override Nginx OCSP stapling cache refresh time of 3600 seconds
+NGINX_STAPLE_CACHE_TTL='86400'  # Nginx OCSP stapling cache refresh time in seconds override default 3600
 NGINXCPU_AUTOTUNE_NEW='y'    # revised nginx worker_proccess auto tuned settings for >12 cpu thread based servers
 ZSTD_LOGROTATE_NGINX='n'     # initial install only for zstd compressed log rotation community.centminmod.com/threads/16371/
 VHOST_PRESTATICINC='y'       # add pre-staticfiles-local.conf & pre-staticfiles-global.conf include files
@@ -750,9 +769,9 @@ VHOSTCTRL_AUTOPROTECTINC='y'
 NGINX_PRIORITIZECHACHA='n' # https://community.centminmod.com/posts/67042/
 DISABLE_TLSONEZERO_PROTOCOL='n' # disable TLS 1.0 protocol by default industry is moving to deprecate for security
 NOSOURCEOPENSSL='y'        # set to 'y' to disable OpenSSL source compile for system default YUM package setup
-OPENSSL_VERSION='1.1.1d'   # Use this version of OpenSSL http://openssl.org/
-OPENSSL_VERSIONFALLBACK='1.1.1d'   # fallback if OPENSSL_VERSION uses openssl 1.1.x branch
-OPENSSL_VERSION_OLDOVERRIDE='1.1.1d' # override version if persist config OPENSSL_VERSION variable is out of date
+OPENSSL_VERSION='1.1.1i'   # Use this version of OpenSSL http://openssl.org/
+OPENSSL_VERSIONFALLBACK='1.1.1i'   # fallback if OPENSSL_VERSION uses openssl 1.1.x branch
+OPENSSL_VERSION_OLDOVERRIDE='1.1.1i' # override version if persist config OPENSSL_VERSION variable is out of date
 OPENSSL_THREADS='y'        # control whether openssl 1.1 branch uses threading or not
 OPENSSL_TLSONETHREE='y'    # whether OpenSSL 1.1.1 builds enable TLSv1.3
 OPENSSL_CUSTOMPATH='/opt/openssl'  # custom directory path for OpenSSL 1.0.2+
@@ -791,7 +810,7 @@ GPERFTOOLS_VERSION='2.6.3'        # Use this version of google-perftools
 
 # Choose whether to compile PCRE from source. Note PHP 5.3.8 already includes PCRE
 PCRE_SOURCEINSTALL='n'     
-PCRE_VERSION='8.43'          # PCRE version
+PCRE_VERSION='8.44'          # PCRE version
 
 # PHP and Cache/Acceleration
 IMAGICKPHP_VER='3.4.4'   # PHP extension for imagick
@@ -799,7 +818,7 @@ MAILPARSEPHP_VER='2.1.6'       # https://pecl.php.net/package/mailparse
 MAILPARSEPHP_COMPATVER='3.0.4' # For PHP 7
 MEMCACHED_INSTALL='y'          # Install Memcached
 LIBEVENT_VERSION='2.1.8'      # Use this version of Libevent
-MEMCACHED_VERSION='1.5.20'    # Use this version of Memcached server
+MEMCACHED_VERSION='1.6.5'    # Use this version of Memcached server
 MEMCACHED_TLS='n'             # TLS support https://github.com/memcached/memcached/wiki/ReleaseNotes1513
 MEMCACHE_VERSION='3.0.8'      # Use this version of Memcache
 MEMCACHE_COMPATVER='4.0.5.1'  # For PHP 7
@@ -894,7 +913,11 @@ SELFSIGNEDSSL_OU=''
 ###############################################################
 # centmin.sh menu option 22 specific options
 WPPLUGINS_ALL='n'           # do not install additional plugins
+WPCLI_CE_QUERYSTRING_INCLUDED='n' # https://community.centminmod.com/posts/85893/
 WPCLI_SUPERCACHEPLUGIN='n'  # https://community.centminmod.com/threads/5102/
+# choose Cache Enabler 1.4.9 cache query string inclusion set to 'y'
+# choose Cache Enabler 1.5.1 cache query string exclusion set to 'n'
+CACHE_ENABLER_LEGACY_CACHE='y'
 ###############################################################
 # php configured --with-mysql-sock=${PHP_MYSQLSOCKPATH}/mysql.sock
 PHP_MYSQLSOCKPATH='/var/lib/mysql'
@@ -904,6 +927,15 @@ PHP_MYSQLSOCKPATH='/var/lib/mysql'
 # generators. You can control whether or not to enable or disable
 # integration detection in these menu options
 LETSENCRYPT_DETECT='n'
+###############################################################
+# centmin.sh menu trigger settings
+SKIP_INITIAL_PIP_UPDATES='y'
+SKIP_PIP_UPDATES='y'
+SKIP_FIXPHPFPM_HTTPPROXY='n'
+SKIP_FIXWP_UPDATER='n'
+SKIP_CSF_MAXMIND_REGO='n'
+SKIP_CHECKIPVSIX='n'
+SKIP_LIBC_FIX='n'
 ###############################################################
 
 MACHINE_TYPE=$(uname -m) # Used to detect if OS is 64bit or not.
@@ -1068,6 +1100,7 @@ source "inc/mysqlsecure.inc"
 source "inc/pcre.inc"
 source "inc/jemalloc.inc"
 source "inc/zlib.inc"
+source "inc/letsdebug.inc"
 source "inc/google_perftools.inc"
 source "inc/updater_submenu.inc"
 source "inc/centminfinish.inc"
@@ -1118,7 +1151,7 @@ else
     TCMALLOC_PAGESIZE='8'
 fi
 
-if [[ "$INITIALINSTALL" = [yY] && -f /usr/bin/systemd-detect-virt && "$(/usr/bin/systemd-detect-virt)" = 'lxc' ]] || [[ "$INITIALINSTALL" = [yY] && -f $(which virt-what) && $(virt-what | xargs | grep -o lxc) = 'lxc' ]]; then
+if [[ "$INITIALINSTALL" = [yY] && -f /usr/bin/systemd-detect-virt && "$(/usr/bin/systemd-detect-virt)" = 'lxc' ]] || [[ "$INITIALINSTALL" = [yY] && -f "$(which virt-what)" && "$(virt-what | xargs | grep -o lxc)" = 'lxc' ]]; then
   CHECK_LXD='y'
   if [ -d /etc/profile.d ]; then
     echo "export LANG=en_US.UTF-8" >> /etc/profile.d/locale.sh
@@ -1238,16 +1271,32 @@ if [[ "$CENTOS_EIGHT" -eq '8' ]]; then
   fi
 fi
 
-if [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETEIGHT" = [yY] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+if [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETNINE" = [yY] && "$DEVTOOLSETEIGHT" = [yY] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='y'
+  DEVTOOLSETEIGHT='n'
+  DEVTOOLSETSEVEN='n'
+elif [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETNINE" = [yY] && "$DEVTOOLSETEIGHT" = [yY] && "$DEVTOOLSETSEVEN" = [nN] ]]; then
+  DEVTOOLSETNINE='y'
+  DEVTOOLSETEIGHT='n'
+  DEVTOOLSETSEVEN='n'
+elif [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETNINE" = [yY] && "$DEVTOOLSETEIGHT" = [nN] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='y'
+  DEVTOOLSETEIGHT='n'
+  DEVTOOLSETSEVEN='n'
+elif [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETNINE" = [nN] && "$DEVTOOLSETEIGHT" = [yY] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='n'
   DEVTOOLSETEIGHT='y'
   DEVTOOLSETSEVEN='n'
-elif [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETEIGHT" = [nN] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
-  DEVTOOLSETEIGHT='y'
-  DEVTOOLSETSEVEN='n'
+elif [[ "$CENTOS_SEVEN" -eq '7' && "$DEVTOOLSETNINE" = [nN] && "$DEVTOOLSETEIGHT" = [nN] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='n'
+  DEVTOOLSETEIGHT='n'
+  DEVTOOLSETSEVEN='y'
 elif [[ "$CENTOS_SIX" -eq '6' && "$DEVTOOLSETEIGHT" = [yY] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='n'
   DEVTOOLSETEIGHT='y'
   DEVTOOLSETSEVEN='n'
 elif [[ "$CENTOS_SIX" -eq '6' && "$DEVTOOLSETEIGHT" = [nN] && "$DEVTOOLSETSEVEN" = [yY] ]]; then
+  DEVTOOLSETNINE='n'
   DEVTOOLSETEIGHT='n'
   DEVTOOLSETSEVEN='y'
 fi
@@ -1255,6 +1304,7 @@ fi
 if [[ "$CENTOS_SIX" -eq '6' && "$BORINGSSL_SWITCH" = [yY] ]]; then
   # centos 6 gcc 4.4.7 too low for boringssl compiles so need
   # devtoolset-8 gcc 8.3.1+ compiler
+  DEVTOOLSETNINE='n'
   DEVTOOLSETEIGHT='y'
   DEVTOOLSETSEVEN='n'
   CRYPTO_DEVTOOLSETGCC='y'
@@ -1996,6 +2046,13 @@ fi
     PHPVER_ID=$(awk '/PHP_VERSION_ID/ {print $3}' ${DIR_TMP}/php-${PHP_VERSION}/main/php_version.h)
     echo "PHP VERSION ID: $PHPVER_ID"
 
+    # if ZOPCACHEDFT override enabled = yY and PHP_VERSION is not 5.5, 5.6 or 5.7
+    # install Zend OpCache PECL extesnion otherwise if PHP_VERSION = 5.5
+    # then php_configure.inc routine will pick up PHP_VERSION 5.5 and install
+    # native Zend OpCache when ZOPCACHEDFT=yY
+    PHPMVER=$(echo "$PHP_VERSION" | cut -d . -f1,2)
+    echo "Initial Install PHPMVER: $PHPMVER"
+
     php_patches
 
     if [[ "$CENTOS_SIX" -eq '6' ]]; then
@@ -2160,12 +2217,6 @@ if [[ "$APCINSTALL" = [yY] && "$ZOPCACHEDFT" = [nN] ]]; then
   funct_apcsourceinstall
 fi
 
-# if ZOPCACHEDFT override enabled = yY and PHP_VERSION is not 5.5, 5.6 or 5.7
-# install Zend OpCache PECL extesnion otherwise if PHP_VERSION = 5.5
-# then php_configure.inc routine will pick up PHP_VERSION 5.5 and install
-# native Zend OpCache when ZOPCACHEDFT=yY
-PHPMVER=$(echo "$PHP_VERSION" | cut -d . -f1,2)
-
 # ZOPCACHE_OVERRIDE=y allows you to override PHP 5.5-7.0's inbuilt included
 # Zend Opcache version with one available from pecl site
 if [[ "$ZOPCACHEDFT" = [yY] ]] && [[ "$PHPMVER" = 5.[234] || "$ZOPCACHE_OVERRIDE" = [yY] ]]; then
@@ -2192,6 +2243,9 @@ incmemcachedinstall
 
 echo "csfinstalls"
 csfinstalls
+
+echo "csfcron_setup"
+csfcron_setup
 
 echo "siegeinstall"
 siegeinstall
@@ -2268,7 +2322,7 @@ if [[ "$NSD_INSTALL" = [yY] ]]; then
     nsdinstall
 fi
 
-php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
+php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
 PHPSEVEN_CHECKVER=$?
 echo "$PHPSEVEN_CHECKVER"
 if [[ "$PHPSEVEN_CHECKVER" = '0' ]]; then
@@ -2294,6 +2348,11 @@ source_pcreinstall
 echo
 shortcutsinstall
 
+if [[ "$CENTOS_SEVEN" -eq '7' || "$CENTOS_EIGHT" -eq '8' ]] && [[ -f "$CUR_DIR/tools/journald-set.sh config" ]]; then
+  echo
+  "$CUR_DIR/tools/journald-set.sh" config
+fi
+
 echo
 cecho "**********************************************************************" $boldgreen
 cecho "* Starting Services..." $boldgreen
@@ -2314,11 +2373,18 @@ fi
 if [[ "$CENTOS_SEVEN" = '7' || "$CENTOS_EIGHT" = '8' ]] && [[ "$MDB_INSTALL" = [yY] || "$MDB_YUMREPOINSTALL" = [yY] ]]; then
   sleep 2
   systemctl daemon-reload -q
-  systemctl restart mariadb
+  service php-fpm stop >/dev/null 2>&1
+  systemctl restart mariadb -q
+  service php-fpm start >/dev/null 2>&1
   if [[ "$(systemctl is-active mariadb -q; echo $?)" -ne '0' ]]; then
     sleep 4
     systemctl daemon-reload -q
-    systemctl restart mariadb
+    systemctl restart mariadb -q
+    if [[ "$(systemctl is-active mariadb -q; echo $?)" -eq '0' ]]; then
+      echo "Starting mariadb (via systemctl): [ OK ]"
+    else
+      echo "Starting mariadb (via systemctl): [ Failed ]"
+    fi
   fi
 elif [[ "$MDB_INSTALL" = [yY] || "$MDB_YUMREPOINSTALL" = [yY] ]] && [ -f /etc/init.d/mysql ]; then
   sleep 3
@@ -2333,6 +2399,11 @@ if [[ "$(service postfix status >/dev/null 2>&1; echo $?)" -ne '0' ]]; then
   sleep 2
   service postfix restart
 fi
+
+# if [[ "$PUREFTPD_DISABLED" != [yY] && "$(service pure-ftpd status >/dev/null 2>&1; echo $?)" -ne '0' ]]; then
+#   sleep 2
+#   service pure-ftpd restart
+# fi
 
 if [[ "$(service csf status >/dev/null 2>&1; echo $?)" -ne '0' ]]; then
   sleep 2
@@ -2419,8 +2490,8 @@ bookmark
 
 sync 
 
-if [ ! -f /proc/user_beancounters ]; then
-echo 3 > /proc/sys/vm/drop_caches
+if [[ ! -f /proc/user_beancounters && "$(virt-what | grep -o lxc)" != 'lxc' ]]; then
+  echo 3 > /proc/sys/vm/drop_caches
 fi
 
 }
@@ -2857,7 +2928,7 @@ EOF
         ccacheinstall
         fi
         
-        yumskipinstall
+        #yumskipinstall
         if [[ "$yuminstallrun" == [yY] ]]; then
         yuminstall
         fi
@@ -2898,7 +2969,7 @@ EOF
         ccacheinstall
         fi
         
-        yumskipinstall
+        #yumskipinstall
         if [[ "$yuminstallrun" == [yY] ]]; then
         yuminstall
         fi
@@ -3133,9 +3204,9 @@ EOF
         fi
         
         if [[ "$TIME_IMAGEMAGICK" = [yY] ]]; then
-            imagickinstall 2>&1 | awk '{ print strftime("%Y-%m-%d %H:%M:%S"), $0; fflush(); }'
+            imagickinstall submenu 2>&1 | awk '{ print strftime("%Y-%m-%d %H:%M:%S"), $0; fflush(); }'
         else
-            imagickinstall
+            imagickinstall submenu
         fi
         } 2>&1 | tee "${CENTMINLOGDIR}/centminmod_${SCRIPT_VERSION}_${DT}_php-imagick-install.log"
         
@@ -3440,7 +3511,7 @@ EOF
         UALL='y'
         cecho "Updating Nginx, PHP-FPM & Siege versions" $boldyellow
         echo
-        yumskipinstall
+        #yumskipinstall
 
         if [[ "$yuminstallrun" == [yY] ]]; then
             yuminstall

@@ -335,7 +335,7 @@ clear_ps() {
 }
 
 function funct_nginxupgrade {
-
+    CLI_NGINX_VER=$1
     checkmap
     # if [ ! -f /usr/local/bin/pcretest ]; then
     #     wgetver_check
@@ -359,7 +359,7 @@ if [ -f /usr/local/lib/libz.so ]; then
     echo "zlib shared library"
 fi
 echo
-if [[ "$UALL" = 'y' ]]; then 
+if [[ "$UALL" = 'y' || "$CLI_NGINX_VER" ]]; then 
     nukey=y
 else
     read -ep "Nginx Upgrade - Would you like to continue? [y/n] " nukey
@@ -389,6 +389,41 @@ fi # CENTOS_SEVEN != 7
 if [[ "$UALL" = 'y' ]]; then 
     ngver=$NGINX_VERSION
     recompileopenssl='n'
+elif [[ "$CLI_NGINX_VER" ]]; then 
+    ngver=$CLI_NGINX_VER
+    service nginx reload >/dev/null 2>&1
+
+    # if user forgets to type in nginx version and hits
+    # enter, ngxver will be empty so should fall back to
+    # the nginx version defined by NGINX_VERSION variable
+    if [ -z "$ngver" ]; then
+        LASTEST_NGINXVERS=$(curl -${ipv_forceopt}sL https://nginx.org/en/download.html 2>&1 | egrep -o "nginx\-[0-9.]+\.tar[.a-z]*" | awk -F "nginx-" '/.tar.gz$/ {print $2}' | sed -e 's|.tar.gz||g' | head -n 1 2>&1)
+        ngver="$LASTEST_NGINXVERS"
+    fi
+
+    # if you set /etc/centminmod/custom_config.inc file to
+    # NGINX_UPDATEMAINTENANCE=y
+    # then whenever you run nginx upgrade, you put all sites
+    # on server into 503 maintenance mode first and once
+    # updated, disable 503 maintenance mod after
+    if [[ "$NGINX_UPDATEMAINTENANCE" = [yY] ]]; then
+        if [ -f /usr/bin/sitestatus ]; then
+            /usr/bin/sitestatus off
+        fi
+    fi
+
+    # auto check if static compiled Nginx openssl version matches
+    # the one defined in centmin.sh OPENSSL_VERSION variable
+    # if doesn't match then auto recompile the statically set
+    # OPENSSL_VERSION
+    AUTOOPENSSLCHECK=$(nginx -V 2>&1 | grep -Eo "$OPENSSL_VERSION")
+    if [[ "$AUTOOPENSSLCHECK" ]]; then
+        recompileopenssl='y'
+    else
+        recompileopenssl='y'
+    fi
+    echo ""
+    checkgeoip
 else
     echo
     echo "Current Nginx Version: $(nginx -v 2>&1 | awk -F "/" '{print $2}' | head -n1)"
@@ -900,7 +935,30 @@ fi
             sed -i 's|ssl http2|ssl spdy|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
             sed -i 's|#spdy_headers_comp|spdy_headers_comp|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
             sed -i 's|#add_header Alternate-Protocol|add_header Alternate-Protocol|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
-        fi        
+        fi  
+    fi
+    if [[ "$DETECT_NGXVER" -ge '1019007' ]]; then
+        # removed in nginx 1.19.7+
+        # http://hg.nginx.org/nginx/rev/827202ca1269
+        # http://hg.nginx.org/nginx/rev/f790816a0e87
+        echo
+        echo "remove deprecated HTTP/2 variables in Nginx 1.19.7+"
+        echo
+        for v in "$(ls /usr/local/nginx/conf/conf.d/*.conf)"; do
+            echo "$v";
+            egrep -n 'http2_max_field_size|http2_max_header_size|http2_max_requests' $v;
+            echo "---";
+            sed -i 's|^  http2_max_field_size|  #http2_max_field_size|g' $v;
+            sed -i 's|^  http2_max_header_size|  #http2_max_header_size|g' $v;
+            sed -i 's|^  http2_max_requests|  #http2_max_requests|g' $v;
+            egrep -n 'http2_max_field_size|http2_max_header_size|http2_max_requests' $v;
+        done
+        if [ -f /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf ]; then
+            sed -i 's|^  http2_max_field_size|  #http2_max_field_size|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
+            sed -i 's|^  http2_max_header_size|  #http2_max_header_size|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
+            sed -i 's|^  http2_max_requests|  #http2_max_requests|g' /usr/local/nginx/conf/conf.d/phpmyadmin_ssl.conf
+        fi
+        echo
     fi
         if [[ "$CENTOS_SEVEN" = '7' ]]; then
             systemctl daemon-reload
@@ -1038,6 +1096,9 @@ fi
             cecho "* Fallback to standard zlib support in Nginx due to SSE4.2 not supported" $boldgreen
             echo
         fi
+        if [[ "$NGINX_STAPLE_CACHE_OVERRIDE" = [yY] ]]; then
+            cecho "* NGINX_STAPLE_CACHE_OVERRIDE='y' detected NGINX_STAPLE_CACHE_TTL='${NGINX_STAPLE_CACHE_TTL}' set" $boldgreen
+        fi
         cecho "* nginx updated" $boldgreen
         if [[ "$ngver" = 'master' ]]; then
             cecho "* nginx github master build" $boldgreen
@@ -1071,30 +1132,5 @@ fi
 
 echo " "
 
-if [[ "$ENABLE_MENU" != [yY] ]]; then
-
-ASK "Do would you like to run script cleanup (Highly recommended) ? [y/n] "
-if [[ "$key" = [yY] ]];
-then
-    rm -rf /svr-setup
-    echo "Temporary files/folders removed"
-fi
-
-ASK "Do you want to delete this script ? [y/n] "
-if [[ "$key" = [yY] ]];
-then
-    echo "*************************************************"
-    cecho "* Deleting Centmin script... " $boldgreen
-    echo "*************************************************"
-    echo "Removing..."
-
-rm -f $0
-
-    echo "*************************************************"
-    cecho "* Centmin script deleted" $boldgreen
-    echo "*************************************************"
-fi
-
-fi
 
 }

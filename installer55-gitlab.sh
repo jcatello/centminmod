@@ -41,7 +41,7 @@ AXEL_LINK="${LOCALCENTMINMOD_MIRROR}/centminmodparts/axel/v${AXEL_VER}.tar.gz"
 AXEL_LINKLOCAL="https://github.com/axel-download-accelerator/axel/archive/v${AXEL_VER}.tar.gz"
 
 #######################################################
-ALTPCRE_VERSION='8.43'
+ALTPCRE_VERSION='8.44'
 ALTPCRELINKFILE="pcre-${ALTPCRE_VERSION}.tar.gz"
 ALTPCRELINK="${LOCALCENTMINMOD_MIRROR}/centminmodparts/pcre/${ALTPCRELINKFILE}"
 
@@ -86,6 +86,16 @@ return
 }
 
 ###########################################################
+
+if [ "$(id -u)" != 0 ]; then
+  echo "script needs to be run as root user" >&2
+  if [ "$(id -Gn | grep -o wheel)" ]; then
+    echo "if using a sudo user, switch to full root first:" >&2
+    echo >&2
+    echo "sudo -i" >&2
+  fi
+  exit 1
+fi
 
 shopt -s expand_aliases
 for g in "" e f; do
@@ -142,6 +152,17 @@ fi
 
 if [[ -f /etc/system-release && "$(awk '{print $1,$2,$3}' /etc/system-release)" = 'Amazon Linux AMI' ]]; then
     CENTOS_SIX='6'
+fi
+
+if [[ "$CENTOS_ALPHATEST" != [yY] && "$CENTOS_EIGHT" = '8' ]]; then
+  echo
+  echo "CentOS 8 is currently not supported by Centmin Mod, please use CentOS 7.7+"
+  echo "To follow CentOS 8 compatibility progress read & subscribe to thread at:"
+  echo "https://community.centminmod.com/threads/centmin-mod-centos-8-compatibility-worklog.18372/"
+  echo "You can read CentOS 8 specific discussions via prefix tag link at:"
+  echo "https://community.centminmod.com/forums/centos-redhat-oracle-linux-news.31/?prefix_id=81"
+  exit 1
+  echo
 fi
 
 if [[ "$CENTOS_SEVEN" -eq '7' ]]; then
@@ -503,6 +524,18 @@ sar_call() {
   $SARCALL 1 1
 }
 
+double_check_wget_bc() {
+  if [ ! -f /usr/bin/wget ]; then
+    yum -y -q install wget
+  fi
+  if [ ! -f /usr/bin/bc ]; then
+    yum -y -q install bc
+  fi
+  if [ ! -f /usr/bin/nano ]; then
+    yum -y -q install nano
+  fi
+}
+
 systemstats() {
   if [ -d /root/centminlogs ]; then
     sar -u > /root/centminlogs/sar-u-installstats.log
@@ -609,7 +642,50 @@ scl_install() {
         fi
         sar_call
       fi
-      if [[ "$DEVTOOLSETSIX" = [yY] ]]; then
+      if [[ "$DEVTOOLSETNINE" = [yY] ]]; then
+        if [[ -z "$(rpm -qa | grep rpmforge)" ]]; then
+          time $YUMDNFBIN -y -q install devtoolset-9-gcc devtoolset-9-gcc-c++ devtoolset-9-binutils
+          time $YUMDNFBIN -y -q install devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils
+          time $YUMDNFBIN -y -q install devtoolset-6-gcc devtoolset-6-gcc-c++ devtoolset-6-binutils
+          sar_call
+        else
+          time $YUMDNFBIN -y -q install devtoolset-9-gcc devtoolset-9-gcc-c++ devtoolset-9-binutils --disablerepo=rpmforge
+          time $YUMDNFBIN -y -q install devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils --disablerepo=rpmforge
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils --disablerepo=rpmforge
+          time $YUMDNFBIN -y -q install devtoolset-6-gcc devtoolset-6-gcc-c++ devtoolset-6-binutils --disablerepo=rpmforge
+          sar_call
+        fi
+        echo
+        /opt/rh/devtoolset-9/root/usr/bin/gcc --version
+        /opt/rh/devtoolset-9/root/usr/bin/g++ --version
+      elif [[ "$DEVTOOLSETEIGHT" = [yY] ]]; then
+        if [[ -z "$(rpm -qa | grep rpmforge)" ]]; then
+          time $YUMDNFBIN -y -q install devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils
+          time $YUMDNFBIN -y -q install devtoolset-6-gcc devtoolset-6-gcc-c++ devtoolset-6-binutils
+          sar_call
+        else
+          time $YUMDNFBIN -y -q install devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils --disablerepo=rpmforge
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils --disablerepo=rpmforge
+          time $YUMDNFBIN -y -q install devtoolset-6-gcc devtoolset-6-gcc-c++ devtoolset-6-binutils --disablerepo=rpmforge
+          sar_call
+        fi
+        echo
+        /opt/rh/devtoolset-8/root/usr/bin/gcc --version
+        /opt/rh/devtoolset-8/root/usr/bin/g++ --version
+      elif [[ "$DEVTOOLSETSEVEN" = [yY] ]]; then
+        if [[ -z "$(rpm -qa | grep rpmforge)" ]]; then
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils
+          sar_call
+        else
+          time $YUMDNFBIN -y -q install devtoolset-7-gcc devtoolset-7-gcc-c++ devtoolset-7-binutils --disablerepo=rpmforge
+          sar_call
+        fi
+        echo
+        /opt/rh/devtoolset-7/root/usr/bin/gcc --version
+        /opt/rh/devtoolset-7/root/usr/bin/g++ --version
+      elif [[ "$DEVTOOLSETSIX" = [yY] ]]; then
         if [[ -z "$(rpm -qa | grep rpmforge)" ]]; then
           time $YUMDNFBIN -y -q install devtoolset-6-gcc devtoolset-6-gcc-c++ devtoolset-6-binutils
           sar_call
@@ -1132,29 +1208,30 @@ if [[ ! -f /usr/bin/git || ! -f /usr/bin/bc || ! -f /usr/bin/wget || ! -f /bin/n
     USER_PKGS=" ipset ipset-devel"
   fi
 
-  time $YUMDNFBIN -y install virt-what python-devel gawk unzip pyOpenSSL python-dateutil libuuid-devel sqlite-devel bc wget lynx screen deltarpm ca-certificates yum-utils bash mlocate subversion rsyslog dos2unix boost-program-options net-tools imake bind-utils libatomic_ops-devel time coreutils autoconf cronie crontabs cronie-anacron gcc gcc-c++ automake libtool make libXext-devel unzip patch sysstat openssh flex bison file libtool-ltdl-devel  krb5-devel libXpm-devel nano gmp-devel aspell-devel numactl lsof pkgconfig gdbm-devel tk-devel bluez-libs-devel iptables* rrdtool diffutils which perl-Test-Simple perl-ExtUtils-Embed perl-ExtUtils-MakeMaker perl-Time-HiRes perl-libwww-perl perl-Crypt-SSLeay perl-Net-SSLeay cyrus-imapd cyrus-sasl-md5 cyrus-sasl-plain strace cmake git net-snmp-libs net-snmp-utils iotop libvpx libvpx-devel t1lib t1lib-devel expect expect-devel readline readline-devel libedit libedit-devel libxslt libxslt-devel openssl openssl-devel curl curl-devel openldap openldap-devel zlib zlib-devel gd gd-devel pcre pcre-devel gettext gettext-devel libidn libidn-devel libjpeg libjpeg-devel libpng libpng-devel freetype freetype-devel libxml2 libxml2-devel glib2 glib2-devel bzip2 bzip2-devel ncurses ncurses-devel e2fsprogs e2fsprogs-devel libc-client libc-client-devel cyrus-sasl cyrus-sasl-devel pam pam-devel libaio libaio-devel libevent libevent-devel recode recode-devel libtidy libtidy-devel net-snmp net-snmp-devel enchant enchant-devel lua lua-devel mailx perl-LWP-Protocol-https OpenEXR-devel OpenEXR-libs atk cups-libs fftw-libs-double fribidi gdk-pixbuf2 ghostscript-devel ghostscript-fonts gl-manpages graphviz gtk2 hicolor-icon-theme ilmbase ilmbase-devel jasper-devel jasper-libs jbigkit-devel jbigkit-libs lcms2 lcms2-devel libICE-devel libSM-devel libXaw libXcomposite libXcursor libXdamage-devel libXfixes-devel libXfont libXi libXinerama libXmu libXrandr libXt-devel libXxf86vm-devel libdrm-devel libfontenc librsvg2 libtiff libtiff-devel libwebp libwebp-devel libwmf-lite mesa-libGL-devel mesa-libGLU mesa-libGLU-devel poppler-data urw-fonts xorg-x11-font-utils${USER_PKGS}${DISABLEREPO_DNF}
+  time $YUMDNFBIN -y install virt-what acl libacl-devel attr libattr-devel lz4-devel python-devel gawk unzip pyOpenSSL python-dateutil libuuid-devel sqlite-devel bc wget lynx screen deltarpm ca-certificates yum-utils bash mlocate subversion rsyslog dos2unix boost-program-options net-tools imake bind-utils libatomic_ops-devel time coreutils autoconf cronie crontabs cronie-anacron gcc gcc-c++ automake libtool make libXext-devel unzip patch sysstat openssh flex bison file libtool-ltdl-devel  krb5-devel libXpm-devel nano gmp-devel aspell-devel numactl lsof pkgconfig gdbm-devel tk-devel bluez-libs-devel iptables* rrdtool diffutils which perl-Test-Simple perl-ExtUtils-Embed perl-ExtUtils-MakeMaker perl-Time-HiRes perl-libwww-perl perl-Crypt-SSLeay perl-Net-SSLeay cyrus-imapd cyrus-sasl-md5 cyrus-sasl-plain strace cmake git net-snmp-libs net-snmp-utils iotop libvpx libvpx-devel t1lib t1lib-devel expect expect-devel readline readline-devel libedit libedit-devel libxslt libxslt-devel openssl openssl-devel curl curl-devel openldap openldap-devel zlib zlib-devel gd gd-devel pcre pcre-devel gettext gettext-devel libidn libidn-devel libjpeg libjpeg-devel libpng libpng-devel freetype freetype-devel libxml2 libxml2-devel glib2 glib2-devel bzip2 bzip2-devel ncurses ncurses-devel e2fsprogs e2fsprogs-devel libc-client libc-client-devel cyrus-sasl cyrus-sasl-devel pam pam-devel libaio libaio-devel libevent libevent-devel recode recode-devel libtidy libtidy-devel net-snmp net-snmp-devel enchant enchant-devel lua lua-devel mailx perl-LWP-Protocol-https OpenEXR-devel OpenEXR-libs atk cups-libs fftw-libs-double fribidi gdk-pixbuf2 ghostscript-devel ghostscript-fonts gl-manpages graphviz gtk2 hicolor-icon-theme ilmbase ilmbase-devel jasper-devel jasper-libs jbigkit-devel jbigkit-libs lcms2 lcms2-devel libICE-devel libSM-devel libXaw libXcomposite libXcursor libXdamage-devel libXfixes-devel libXfont libXi libXinerama libXmu libXrandr libXt-devel libXxf86vm-devel libdrm-devel libfontenc librsvg2 libtiff libtiff-devel libwebp libwebp-devel libwmf-lite mesa-libGL-devel mesa-libGLU mesa-libGLU-devel poppler-data urw-fonts xorg-x11-font-utils${USER_PKGS}${DISABLEREPO_DNF}
   sar_call
   # allows curl install to skip checking for already installed yum packages 
   # later on in initial curl installations
   touch /tmp/curlinstaller-yum
   time $YUMDNFBIN -y install epel-release${DISABLEREPO_DNF}
+  $YUMDNFBIN makecache fast
   sar_call
   if [[ "$CENTOS_EIGHT" = '8' ]]; then
-    time $YUMDNFBIN -y install qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python2-pip libmcrypt libmcrypt-devel libraqm figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel${DISABLEREPO_DNF} --enablerepo=epel,epel-playground,epel-testing
+    time $YUMDNFBIN -y install xxhash-devel libzstd xxhash libzstd-devel datamash qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python2-pip libmcrypt libmcrypt-devel libraqm oniguruma5php oniguruma5php-devel figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel${DISABLEREPO_DNF} --enablerepo=epel,epel-playground,epel-testing
     libc_fix
     if [ -f /usr/bin/pip ]; then
       PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install --upgrade pip
     fi
     sar_call
   elif [[ "$CENTOS_SEVEN" = '7' ]]; then
-    time $YUMDNFBIN -y install qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python2-pip libmcrypt libmcrypt-devel libraqm figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel${DISABLEREPO_DNF} --enablerepo=epel
+    time $YUMDNFBIN -y install xxhash-devel libzstd xxhash libzstd-devel datamash qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python2-pip libmcrypt libmcrypt-devel libraqm oniguruma5php oniguruma5php-devel figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel${DISABLEREPO_DNF} --enablerepo=epel
     libc_fix
     if [ -f /usr/bin/pip ]; then
-      PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install --upgrade pip
+      PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install --upgrade pip==20.3.4
     fi
     sar_call
   else
-    time $YUMDNFBIN -y install qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python-pip libmcrypt libmcrypt-devel libraqm figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 libJudy bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel cmake28 uw-imap-devel${DISABLEREPO_DNF} --enablerepo=epel
+    time $YUMDNFBIN -y install datamash qrencode jq clang clang-devel jemalloc jemalloc-devel zstd python-pip libmcrypt libmcrypt-devel libraqm oniguruma5php oniguruma5php-devel figlet moreutils nghttp2 libnghttp2 libnghttp2-devel pngquant optipng jpegoptim pwgen pigz pbzip2 xz pxz lz4 libJudy bash-completion bash-completion-extras mlocate re2c kernel-headers kernel-devel cmake28 uw-imap-devel${DISABLEREPO_DNF} --enablerepo=epel
     if [ -f /usr/bin/pip ]; then
       PYTHONWARNINGS=ignore:::pip._internal.cli.base_command pip install --upgrade pip
     fi
@@ -1366,6 +1443,7 @@ if [[ "$DEF" = 'novalue' ]]; then
         SYSTEMD_FACEBOOKRPM='y'
       fi
     fi
+    double_check_wget_bc
     source_pcreinstall
     source_wgetinstall
   fi
@@ -1421,7 +1499,7 @@ echo "--------------------------------------------------------------------------
 echo "---------------------------------------------------------------------------"
 } 2>&1 | tee "/root/centminlogs/install_time_stats_${DT}.log"
   cat "/root/centminlogs/install_time_stats_${DT}.log" >> "/root/centminlogs/installer_${DT}.log"
-  cat "/root/centminlogs/installer_${DT}.log" | egrep -v 'DOPENSSL_PIC|\/opt\/openssl\/share\/|fpm-build\/libtool|checking for |checking whether |make -f |make\[1\]|make\[2\]|make\[3\]|make\[4\]|make\[5\]' > "/root/centminlogs/installer_${DT}_minimal.log"
+  cat "/root/centminlogs/installer_${DT}.log" | egrep -v '\*\*\*\*\*\*|csf: |Flushing chain  CC |and iptables DROP|The set with the given name does not exist|csf: IPSET adding|\.\.\.\.\.\.\.\.\.\.|DOPENSSL_PIC|\/opt\/openssl\/share\/|fpm-build\/libtool|checking for |checking whether |make -f |make\[1\]|make\[2\]|make\[3\]|make\[4\]|make\[5\]' > "/root/centminlogs/installer_${DT}_minimal.log"
   systemstats
 fi
 

@@ -220,12 +220,15 @@ if [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module
   LISTENOPT='ssl spdy http2'
   COMP_HEADER='spdy_headers_comp 5'
   SPDY_HEADER='add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module' ]]; then
   HTTPTWO=y
-  if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/ | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
+  if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/*.conf | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
     # check if reuseport is supported for listen 443 port - only needs to be added once globally for all nginx vhosts
     NGXVHOST_CHECKREUSEPORT=$(grep --color -Ro SO_REUSEPORT /usr/src/kernels/* | head -n1 | awk -F ":" '{print $2}')
     if [[ "$NGXVHOST_CHECKREUSEPORT" = 'SO_REUSEPORT' ]]; then
@@ -239,9 +242,12 @@ elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_modu
   fi
   COMP_HEADER='#spdy_headers_comp 5'
   SPDY_HEADER='#add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 else
   HTTPTWO=n
   LISTENOPT='ssl spdy'
@@ -297,7 +303,50 @@ else
   SELFSIGNEDSSL_OU="$SELFSIGNEDSSL_OU"
 fi
 
-# self-signed ssl cert with SANs
+if [[ "$SELFSIGNEDSSL_ECDSA" = [yY] ]]; then
+  # self-signed ssl cert with SANs for ECDSA
+cat > /tmp/reqecc.cnf <<EOF
+[req]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt = no
+[req_distinguished_name]
+C = ${SELFSIGNEDSSL_C}
+ST = ${SELFSIGNEDSSL_ST}
+L = ${SELFSIGNEDSSL_L}
+O = ${vhostname}
+OU = ${vhostname}
+CN = ${vhostname}
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+cat > /tmp/v3extecc.cnf <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+  openssl ecparam -out ${vhostname}.key -name prime256v1 -genkey
+  openssl req -new -sha256 -key ${vhostname}.key -nodes -out ${vhostname}.csr -config /tmp/reqecc.cnf
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3extecc.cnf
+  openssl x509 -noout -text < ${vhostname}.crt
+
+  rm -f /tmp/reqecc.cnf
+  rm -f /tmp/v3extecc.cnf
+else
+  # self-signed ssl cert with SANs
 cat > /tmp/req.cnf <<EOF
 [req]
 default_bits       = 2048
@@ -330,61 +379,22 @@ subjectAltName = @alt_names
 DNS.1 = ${vhostname}
 DNS.2 = www.${vhostname}
 EOF
+  echo
+  cat /tmp/req.cnf
+  echo
+  cat /tmp/v3ext.cnf
+  echo
+  openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
+  # openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
+  openssl req -noout -text -in ${vhostname}.csr | grep DNS
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
+  # openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
+  
+  rm -f /tmp/req.cnf
+  rm -f /tmp/v3ext.cnf
+fi
 
-echo
-cat /tmp/req.cnf
-echo
-cat /tmp/v3ext.cnf
-echo
-openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
-# openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
-openssl req -noout -text -in ${vhostname}.csr | grep DNS
-openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
-# openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
 
-rm -f /tmp/req.cnf
-rm -f /tmp/v3ext.cnf
-
-# echo
-# cecho "---------------------------------------------------------------" $boldyellow
-# cecho "Generating backup CSR and private key for HTTP Public Key Pinning..." $boldgreen
-# cecho "creating CSR File: ${vhostname}-backup.csr" $boldgreen
-# cecho "creating private key: ${vhostname}-backup.key" $boldgreen
-# sleep 5
-
-# openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}-backup.csr -keyout ${vhostname}-backup.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${SELFSIGNEDSSL_O}/OU=${SELFSIGNEDSSL_OU}/CN=${vhostname}"
-
-# echo
-# cecho "---------------------------------------------------------------" $boldyellow
-# cecho "Extracting Base64 encoded information for primary and secondary" $boldgreen
-# cecho "private key's SPKI - Subject Public Key Information" $boldgreen
-# cecho "Primary private key - ${vhostname}.key" $boldgreen
-# cecho "Backup private key - ${vhostname}-backup.key" $boldgreen
-# cecho "For HPKP - HTTP Public Key Pinning hash generation..." $boldgreen
-# sleep 5
-
-# echo
-# cecho "extracting SPKI Base64 encoded hash for primary private key = ${vhostname}.key ..." $boldgreen
-
-# openssl rsa -in ${vhostname}.key -outform der -pubout | openssl dgst -sha256 -binary | openssl enc -base64 | tee -a /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt
-
-# echo
-# cecho "extracting SPKI Base64 encoded hash for backup private key = ${vhostname}-backup.key ..." $boldgreen
-
-# openssl rsa -in ${vhostname}-backup.key -outform der -pubout | openssl dgst -sha256 -binary | openssl enc -base64 | tee -a /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt
-
-# echo
-# cecho "HTTP Public Key Pinning Header for Nginx" $boldgreen
-
-# echo
-# cecho "for 7 days max-age including subdomains" $boldgreen
-# echo
-# echo "add_header Public-Key-Pins 'pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt)\"; pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt)\"; max-age=86400; includeSubDomains';"
-
-# echo
-# cecho "for 7 days max-age excluding subdomains" $boldgreen
-# echo
-# echo "add_header Public-Key-Pins 'pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt)\"; pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt)\"; max-age=86400';"
 
 if [[ ! -f "$(find /usr/local/nginx/conf/ssl -type f -name "dhparam.pem" | head -n1)" ]]; then
   echo
@@ -522,14 +532,14 @@ if [[ "$NGINX_VHOSTSSL" = [yY] ]]; then
         vhostssl=invalidopt
       fi
       echo
-      if [[ "$vhostssl_opt" -eq '2' || "$vhostssl_opt" -eq '4' ]]; then
+      if [[ "$vhostssl_opt" -eq '2' || "$vhostssl_opt" -eq '4' ]] && [[ "$ISCF_ACHECK" = 'Cloudflare' || "$ISCF_ACHECK" = 'cloudflare' ]]; then
         echo "If using Cloudflare in front of site, disable CF option for"
         echo "Always Use HTTPS in CF Dashboard Crypto Tab as Nginx will do"
         echo "the non-https to https redirect on this end and not require"
         echo "Cloudflare's Always Use HTTPS. If enabled it will cause the"
         echo "error message: too many redirects"
         echo
-        echo "Also change Cloudflare SSL from Flexible to Full SSL mode"
+        echo "Also change Cloudflare Flexible SSL to Full SSL non-strict mode"
         echo
         sleep 1
       fi
@@ -626,7 +636,8 @@ read -ep "Enter email address for Admin User for Wordpress Installation: " WPADM
 # otherwise hide redis cache option if nginx server is missing 
 # required redis related nginx modules
 CHECKFOR_REDISMODULES=$(nginx -V 2>&1 | egrep -o 'ngx_http_redis|redis2-nginx-module|ngx_cache_purge|set-misc-nginx-module' | xargs)
-if [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'ngx_cache_purge')" = 'ngx_cache_purge' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'set-misc-nginx-module')" = 'set-misc-nginx-module' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'redis2-nginx-module')" = 'redis2-nginx-module' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'ngx_http_redis')" = 'ngx_http_redis' ]]; then  redis_ngx_exists='y'
+if [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'ngx_cache_purge')" = 'ngx_cache_purge' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'set-misc-nginx-module')" = 'set-misc-nginx-module' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'redis2-nginx-module')" = 'redis2-nginx-module' ]] && [[ "$(echo $CHECKFOR_REDISMODULES | grep -o 'ngx_http_redis')" = 'ngx_http_redis' ]]; then
+  redis_ngx_exists='y'
 else
   redis_ngx_exists='n'
 fi
@@ -921,6 +932,7 @@ if (\$wpfcgi_cache_mobile = 1) { set \$no_wpfastcgicache 1; }
 
 # bypass cache for woocommerce
 if (\$arg_add-to-cart != "") { set \$no_wpfastcgicache 1; set \$skip_reason "\${skip_reason}-Woocommerce"; }
+if (\$arg_wc-api != "") { set \$no_wpfastcgicache 1; set \$skip_reason "\${skip_reason}-Woocommerce"; }
 
 ## bypass cache for empty woocommerce carts
 #if (\$cookie_woocommerce_items_in_cart != "0") { 
@@ -1013,6 +1025,7 @@ map \$http_cookie \$wpfcgi_nocachecookie {
     ~*xf_style_id                            1;
     ~*xf_tfa_trust                           1;
     ~*xf_user                                1;
+    ~*wc-api                                 1;
 }
 
 map \$request_uri \$wpfcgi_nocacheuri {
@@ -1065,7 +1078,7 @@ map \$request_uri \$wpfcgi_nocacheuri {
     ~^/wp-links-opml.php             1;
     ~^/wp-locations.php              1;
     ~^/wp-login.php                  1;
-    ~^/wp-mail.php                       1;
+    ~^/wp-mail.php                   1;
     ~^/wp-register.php               1;
     ~^/xmlrpc.php                    1;
 }
@@ -1149,18 +1162,30 @@ cat > "/usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}
         set \$cache_uri 'nullcache';
     }
 
+    # include query strings fbclid, gclid, utm in cache via stripping them with
+    # 302 redirect via mapping in /usr/local/nginx/conf/wpcacheenabler_map.conf
+    if (\$q_ignorearg) {
+      set \$check_qurl \$request_uri;
+      set \$check_surl \$request_uri;
+      set \$cache_uri \$uri;
+      #rewrite ^ \$uri? redirect;
+    }
+    add_header Check-Querystring-Uri "\$check_qurl";
+    #add_header Q-Ignore-Arg "\$q_ignorearg";
+
     # bypass cache if URLs containing the following strings
-    if (\$request_uri ~* "(\?add-to-cart=|/cart/|/my-account/|/checkout/|/shop/checkout/|/wp-json/|/store/checkout/|/customer-dashboard/|/addons/|/wp-admin/|/xmlrpc.php|/wp-(app|cron|login|register|mail).php|wp-.*.php|/feed/|index.php|wp-comments-popup.php|wp-links-opml.php|wp-locations.php|sitemap(_index)?.xml|[a-z0-9_-]+-sitemap([0-9]+)?.xml)") {
+    if (\$request_uri ~* "(\?add-to-cart=|\?wc-api=|/cart/|/my-account/|/checkout/|/shop/checkout/|/wp-json/|/store/checkout/|/customer-dashboard/|/addons/|/wp-admin/|/xmlrpc.php|/wp-(app|cron|login|register|mail).php|wp-.*.php|/feed/|index.php|wp-comments-popup.php|wp-links-opml.php|wp-locations.php|sitemap(_index)?.xml|[a-z0-9_-]+-sitemap([0-9]+)?.xml)") {
         set \$cache_uri 'nullcache';
     }
 
     # bypass cache if the cookies containing the following strings
-    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") {
+    if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|wc-api|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") {
         set \$cache_uri 'nullcache';
     }
 
     # bypass cache for woocommerce
     if (\$arg_add-to-cart != "") { set \$cache_uri 'nullcache'; }
+    if (\$arg_wc-api != "") { set \$cache_uri 'nullcache'; }
 
     ## bypass cache for empty woocommerce carts
     #if (\$cookie_woocommerce_items_in_cart != "0") { 
@@ -1169,14 +1194,26 @@ cat > "/usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}
 
     # custom sub directory e.g. /blog
     set \$custom_subdir '${WPSUBDIR}';
+    #if (\$args ~* s=(.*)) {
+    #  set \$cache_uri \$request_uri;
+    #  set \$check_surl \$cache_uri;
+    #  set \$cache_uri /search/\$1;
+    #}
+    #add_header Check-Uri "\$check_surl";
+    #add_header Set-Uri "\$cache_uri";
 
     # default html file
-    set \$cache_enabler_uri '\${custom_subdir}/wp-content/cache/cache-enabler/\${http_host}\${cache_uri}index.html';
+    set \$cache_enabler_uri '\${custom_subdir}/wp-content/cache/cache-enabler/\${http_host}\${cache_uri}\${scheme}-index.html';
 
     # webp html file
     if (\$http_accept ~* "image/webp") {
-        set \$cache_enabler_uri '\${custom_subdir}/wp-content/cache/cache-enabler/\${http_host}\${cache_uri}index-webp.html';
+        set \$cache_enabler_uri_webp '\${custom_subdir}/wp-content/cache/cache-enabler/\${http_host}\${cache_uri}\${scheme}-index-webp.html';
     }
+
+    #if (-f \$document_root\$cache_enabler_uri) {
+    #set \$cttls "120s";
+    #}
+    #expires \$cttls;
 HFA
 
 cat > "/usr/local/nginx/conf/wpcacheenabler_map.conf"<<HFB
@@ -1191,6 +1228,25 @@ map \$http_user_agent \$cmwpcache_device {
     "~*Tablet"                                  'mobile';
     "~*Kindle"                                  'mobile';
     "~*Windows\ Phone"                          'mobile';
+}
+
+map \$args \$q_ignorearg {
+  default               0;
+  "~*fbclid"            1;
+  "~*gclid"             1;
+  "~*utm"               1;
+  "~*fb_action_ids"     1;
+  "~*fb_action_types"   1;
+  "~*fb_source"         1;
+  "~*age-verified"      1;
+  "~*ao_noptimize"      1;
+  "~*usqp"              1;
+  "~*cn-reloaded"       1;
+  "~*_ga"               1;
+  "~*_ke"               1;
+  "~*mc_cid"            1;
+  "~*mc_eid"            1;
+  "~*ref"               1;
 }
 HFB
 
@@ -1215,7 +1271,7 @@ location ~ [^/]\.php(/|\$) {
     fastcgi_pass    wpfcgi_cache_php;
     keepalive_requests 200;
     #fastcgi_pass   127.0.0.1:9000;
-    #fastcgi_pass   unix:/tmp/php5-fpm.sock;
+    #fastcgi_pass   unix:/var/run/php-fpm/php-fpm.sock;
     fastcgi_index  index.php;
     #fastcgi_param  SCRIPT_FILENAME  \$document_root\$fastcgi_script_name;
     fastcgi_param  SCRIPT_FILENAME    \$request_filename;
@@ -1268,11 +1324,11 @@ if (\$fastcgi_debug) {
 #tcp_nopush off;
 #keepalive_requests 0;
 
-fastcgi_connect_timeout 60s;
-fastcgi_send_timeout 180s;
-fastcgi_read_timeout 300s;
-fastcgi_buffer_size 16k;
-fastcgi_buffers 512 16k;
+fastcgi_connect_timeout 360s;
+fastcgi_send_timeout 360s;
+fastcgi_read_timeout 360s;
+fastcgi_buffer_size 32k;
+fastcgi_buffers 512 32k;
 fastcgi_busy_buffers_size 1m;
 fastcgi_temp_file_write_size 4m;
 fastcgi_max_temp_file_size 4m;
@@ -1362,7 +1418,7 @@ location ~ [^/]\.php(/|\$) {
     more_set_headers 'X-Cache-2 \$srcache_store_status';
 
     fastcgi_pass   127.0.0.1:9000;
-    #fastcgi_pass   unix:/tmp/php5-fpm.sock;
+    #fastcgi_pass   unix:/var/run/php-fpm/php-fpm.sock;
     fastcgi_index  index.php;
     #fastcgi_param  SCRIPT_FILENAME  \$document_root\$fastcgi_script_name;
     fastcgi_param  SCRIPT_FILENAME    \$request_filename;
@@ -1376,11 +1432,11 @@ location ~ [^/]\.php(/|\$) {
 #tcp_nopush off;
 #keepalive_requests 0;
 
-fastcgi_connect_timeout 60s;
-fastcgi_send_timeout 180s;
-fastcgi_read_timeout 300s;
-fastcgi_buffer_size 16k;
-fastcgi_buffers 512 16k;
+fastcgi_connect_timeout 360s;
+fastcgi_send_timeout 360s;
+fastcgi_read_timeout 360s;
+fastcgi_buffer_size 32k;
+fastcgi_buffers 512 32k;
 fastcgi_busy_buffers_size 1m;
 fastcgi_temp_file_write_size 4m;
 fastcgi_max_temp_file_size 4m;
@@ -1465,7 +1521,7 @@ location ~ [^/]\.php(/|\$) {
     more_set_headers 'X-Cache-2 \$srcache_store_status';
 
     fastcgi_pass   127.0.0.1:9000;
-    #fastcgi_pass   unix:/tmp/php5-fpm.sock;
+    #fastcgi_pass   unix:/var/run/php-fpm/php-fpm.sock;
     fastcgi_index  index.php;
     #fastcgi_param  SCRIPT_FILENAME  \$document_root\$fastcgi_script_name;
     fastcgi_param  SCRIPT_FILENAME    \$request_filename;
@@ -1479,11 +1535,11 @@ location ~ [^/]\.php(/|\$) {
 #tcp_nopush off;
 #keepalive_requests 0;
 
-fastcgi_connect_timeout 60s;
-fastcgi_send_timeout 180s;
-fastcgi_read_timeout 300s;
-fastcgi_buffer_size 16k;
-fastcgi_buffers 512 16k;
+fastcgi_connect_timeout 360s;
+fastcgi_send_timeout 360s;
+fastcgi_read_timeout 360s;
+fastcgi_buffer_size 32k;
+fastcgi_buffers 512 32k;
 fastcgi_busy_buffers_size 1m;
 fastcgi_temp_file_write_size 4m;
 fastcgi_max_temp_file_size 4m;
@@ -1690,7 +1746,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
@@ -1722,7 +1778,7 @@ server {
   try_files /wp-content/cache/supercache/\$http_host/\$cache_uri/index.html \$uri \$uri/ ${WPSUBDIR}/index.php?q=\$uri&\$args;
 
   # for wp cache enabler plugin
-  #try_files \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;
+  #try_files \$cache_enabler_uri_webp \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;
 
   # Wordpress fastcgi_cache
     #try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;
@@ -1750,6 +1806,8 @@ location ~* ${WPSUBDIR}/(xmlrpc\.php) {
     limit_req zone=xwprpc burst=45 nodelay;
     #limit_conn xwpconlimit 30;
     include /usr/local/nginx/conf/php-wpsc.conf;
+    # https://jetpack.com/support/hosting-faq/
+    include /usr/local/nginx/conf/jetpack_whitelist_ip.conf;
     # https://community.centminmod.com/posts/18828/
     #include /usr/local/nginx/conf/php-rediscache.conf;
 }
@@ -1822,7 +1880,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
   $COMP_HEADER;
   ssl_buffer_size 1369;
   ssl_session_tickets on;
@@ -1869,7 +1927,7 @@ server {
   try_files /wp-content/cache/supercache/\$http_host/\$cache_uri/index.html \$uri \$uri/ ${WPSUBDIR}/index.php?q=\$uri&\$args;
 
   # for wp cache enabler plugin
-  #try_files \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;  
+  #try_files \$cache_enabler_uri_webp \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;  
 
   # Wordpress fastcgi_cache
     #try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;
@@ -1898,6 +1956,8 @@ location ~* ${WPSUBDIR}/(xmlrpc\.php) {
     limit_req zone=xwprpc burst=45 nodelay;
     #limit_conn xwpconlimit 30;
     include /usr/local/nginx/conf/php-wpsc.conf;
+    # https://jetpack.com/support/hosting-faq/
+    include /usr/local/nginx/conf/jetpack_whitelist_ip.conf;
     ${MULTIPHP_INCLUDES}
     # https://community.centminmod.com/posts/18828/
     #include /usr/local/nginx/conf/php-rediscache.conf;
@@ -1962,7 +2022,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
@@ -1994,7 +2054,7 @@ server {
   try_files /wp-content/cache/supercache/\$http_host/\$cache_uri/index.html \$uri \$uri/ ${WPSUBDIR}/index.php?q=\$uri&\$args;
 
   # for wp cache enabler plugin
-  #try_files \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;   
+  #try_files \$cache_enabler_uri_webp \$cache_enabler_uri \$uri \$uri/ \$custom_subdir/index.php?\$args;   
 
   # Wordpress fastcgi_cache
     #try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;
@@ -2023,6 +2083,8 @@ location ~* ${WPSUBDIR}/(xmlrpc\.php) {
     limit_req zone=xwprpc burst=45 nodelay;
     #limit_conn xwpconlimit 30;
     include /usr/local/nginx/conf/php-wpsc.conf;
+    # https://jetpack.com/support/hosting-faq/
+    include /usr/local/nginx/conf/jetpack_whitelist_ip.conf;
     ${MULTIPHP_INCLUDES}
     # https://community.centminmod.com/posts/18828/
     #include /usr/local/nginx/conf/php-rediscache.conf;
@@ -2078,6 +2140,13 @@ location ~ /.well-known {
     }
 }
 
+location ~* ${WPSUBDIR}/wp-content/cache/autoptimize/.*\.(js|css)\$ {
+  include /usr/local/nginx/conf/php.conf;
+  add_header AO-Fallback 1;
+  try_files \$uri \$uri/ ${WPSUBDIR}/wp-content/autoptimize_404_handler.php;
+  expires 30d;
+}
+
 # allow AJAX requests in themes and plugins
 location ~ ^${WPSUBDIR}/wp-admin/admin-ajax.php$ { allow all; include /usr/local/nginx/conf/php.conf; }
 
@@ -2099,9 +2168,114 @@ location ~ ^${WPSUBDIR}/wp-content/uploads/ {
   location ~* ^${WPSUBDIR}/wp-content/uploads/(.+/)?(.+)\.(png|jpe?g)\$ {
     expires 30d;
     add_header Vary "Accept";
-    add_header Cache-Control "public, no-transform";
+    add_header Cache-Control "public";
     try_files \$uri\$webp_extension \$uri =404;
   }
+}
+
+# Whitelist Exception for seo-by-rank-math
+location ~ ^${WPSUBDIR}/wp-content/plugins/seo-by-rank-math/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for amp
+location ~ ^${WPSUBDIR}/wp-content/plugins/amp/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for async-javascript
+location ~ ^${WPSUBDIR}/wp-content/plugins/async-javascript/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for autoptimize
+location ~ ^${WPSUBDIR}/wp-content/plugins/autoptimize/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for autoptimize-gzip
+location ~ ^${WPSUBDIR}/wp-content/plugins/autoptimize-gzip/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Security for wp-cloudflare-page-cache debug.log which is exposed to public access
+# /wp-content/wp-cloudflare-super-page-cache/yourdomain.com/debug.log
+location ~ ^${WPSUBDIR}/wp-content/wp-cloudflare-super-page-cache/${vhostname}/(debug.log)\$ {
+  deny all;
+}
+
+# Whitelist Exception for wp-cloudflare-page-cache
+location ~ ^${WPSUBDIR}/wp-content/plugins/wp-cloudflare-page-cache/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for cloudflare
+location ~ ^${WPSUBDIR}/wp-content/plugins/cloudflare/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for post-grid
+location ~ ^${WPSUBDIR}/wp-content/plugins/post-grid/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
+}
+
+# Whitelist Exception for breadcrumb-navxt
+location ~ ^${WPSUBDIR}/wp-content/plugins/breadcrumb-navxt/ {
+  include /usr/local/nginx/conf/php.conf;
+  include /usr/local/nginx/conf/staticfiles.conf;
+  # below include file needs to be manually created at that path and to be uncommented
+  # by removing the hash # in front of below line to take effect. This wpwhitelist_common.conf
+  # allows you to add commonly shared settings to all wp plugin location matches which
+  # whitelist php processing access at /usr/local/nginx/conf/wpincludes/${vhostname}/wpsecure_${vhostname}.conf
+  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpwhitelist_common.conf;
 }
 
 location ~ ^${WPSUBDIR}/(wp-includes/js/tinymce/wp-tinymce.php) {
@@ -2630,6 +2804,12 @@ return 444;
 }
 
 location ~* ${WPSUBDIR}/(\.|wp-config\.php|wp-config\.txt|changelog\.txt|readme\.txt|readme\.html|license\.txt) { deny all; }
+
+location ${WPSUBDIR}/wp-content/uploads/wp-personal-data-exports/ {
+  location ~ ^${WPSUBDIR}/wp-content/uploads/wp-personal-data-exports/(.+/)?(.+)\.(zip)\$ { allow all; expires 30d; }
+}
+
+location ~* ${WPSUBDIR}/(wp-content)/(.*?)\.(zip|gz|tar|bzip2|7z|txt)\$ { deny all; }
 EEF
 
 # WP super cache
@@ -2640,15 +2820,16 @@ if (\$request_method = POST) { set \$cache_uri 'null cache'; }
 
 if (\$query_string != "") { set \$cache_uri 'null cache'; }
 
-if (\$request_uri ~* "/(\?add-to-cart=|cart/|my-account/|checkout/|shop/checkout/|store/checkout/|wp-json/|customer-dashboard/|addons/|wp-admin/.*|xmlrpc\.php|wp-.*\.php|index\.php|feed/|sitemap(_index)?\.xml|[a-z0-9_-]+-sitemap([0-9]+)?\.xml)") { set \$cache_uri 'null cache'; }
+if (\$request_uri ~* "/(\?add-to-cart=|\?wc-api=|cart/|my-account/|checkout/|shop/checkout/|store/checkout/|wp-json/|customer-dashboard/|addons/|wp-admin/.*|xmlrpc\.php|wp-.*\.php|index\.php|feed/|sitemap(_index)?\.xml|[a-z0-9_-]+-sitemap([0-9]+)?\.xml)") { set \$cache_uri 'null cache'; }
 
 # bypass cache for woocommerce
 if ( \$arg_add-to-cart != "" ) { set \$cache_uri 'null cache'; }
+if ( \$arg_wc-api != "" ) { set \$cache_uri 'null cache'; }
 
 ## bypass cache for empty woocommerce carts
 #if ( \$cookie_woocommerce_items_in_cart != "0" ) { set \$cache_uri 'null cache'; }
 
-if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") { set \$cache_uri 'null cache'; }
+if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_logged_in|wc-api|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") { set \$cache_uri 'null cache'; }
 EFF
 
 # for nginx level redis cache
@@ -2671,17 +2852,18 @@ if (\$query_string != "") {
 }
 
 # Don't cache uris containing the following segments
-if (\$request_uri ~* "\?add-to-cart=|/cart/|/my-account/|/checkout/|/shop/checkout/|/wp-json/|/store/checkout/|/customer-dashboard/|/addons/|/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") {
+if (\$request_uri ~* "\?add-to-cart=|\?wc-api=|/cart/|/my-account/|/checkout/|/shop/checkout/|/wp-json/|/store/checkout/|/customer-dashboard/|/addons/|/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") {
   set \$skip_cache 1;
 }
 
 # Don't use the cache for logged in users or recent commenters
-if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") {
+if (\$http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in|wc-api|edd_items_in_cart|woocommerce_items_in_cart|woocommerce_cart_hash|woocommerce_recently_viewed|wc_session_cookie_HASH|wp_woocommerce_session_|wptouch_switch_toggle") {
   set \$skip_cache 1;
 }
 
 # bypass cache for woocommerce
 if (\$arg_add-to-cart != "") { set \$skip_cache 1; }
+if (\$arg_wc-api != "") { set \$skip_cache 1; }
 
 ## bypass cache for empty woocommerce carts
 #if (\$cookie_woocommerce_items_in_cart != "0") { 
@@ -2821,7 +3003,11 @@ if [[ -z "$(crontab -l 2>&1 | grep '\/${vhostname}/wp-cron.php')" ]]; then
     cp cronjoblist /home/nginx/domains/${vhostname}/cronjobs/cronjoblist-before-wp-cron.txt
     # only insert cronjob if one doesn't already exist
     if [[ -z $(grep "${vhostname}\/wp-cron.php" cronjoblist) ]]; then
-      echo "#*/15 * * * * sleep ${DELAY}s ; wget -4 -O - -q -t 1 http://${vhostname}/wp-cron.php?doing_wp_cron > /dev/null 2>&1" >> cronjoblist
+      if [[ "$wpcli_ssldefault" = '1' ]]; then
+        echo "#*/15 * * * * sleep ${DELAY}s ; curl -skD - -H \"Cookie: wordpress_logged_in\" \"https://${vhostname}/wp-cron.php?doing_wp_cron\" -o /dev/null 2>&1" >> cronjoblist
+      else
+        echo "#*/15 * * * * sleep ${DELAY}s ; curl -skD - -H \"Cookie: wordpress_logged_in\" \"http://${vhostname}/wp-cron.php?doing_wp_cron\" -o /dev/null 2>&1" >> cronjoblist
+      fi
     fi
     cp cronjoblist /home/nginx/domains/${vhostname}/cronjobs/cronjoblist-after-wp-cron.txt
     crontab cronjoblist
@@ -2930,12 +3116,63 @@ fi
 # wp cache enabler
 if [[ "$wpscache" = [nN] ]]; then
   cecho "------------------------------------------------------------" $boldgreen
-  \wp plugin install cache-enabler --activate --allow-root
+  if [[ "$CACHE_ENABLER_LEGACY_CACHE" = [yY] ]]; then
+    \wp plugin install cache-enabler --version=1.4.9 --force --activate --allow-root
+    \wp plugin install block-specific-plugin-updates --activate --allow-root
+    if [ "$(\wp option get bpu_update_blocked_plugins --allow-root >/dev/null 2>&1; echo $?)" -ne '0' ]; then
+      \wp option update bpu_update_blocked_plugins cache-enabler/cache-enabler.php --allow-root;
+    else
+      \wp option add bpu_update_blocked_plugins cache-enabler/cache-enabler.php --allow-root;
+    fi
+  else
+    \wp plugin install cache-enabler --activate --allow-root
+  fi
+  chown nginx:nginx wp-content/advanced-cache.php
+  chown -R nginx:nginx wp-content/plugins/cache-enabler
   cecho "------------------------------------------------------------" $boldgreen 
   # \wp plugin install optimus --activate --allow-root
-  echo "configure cache-enabler"
-  \wp option update cache-enabler '{"expires":6,"new_post":1,"new_comment":1,"webp":0,"clear_on_upgrade":1,"compress":1,"excl_ids":"","excl_regexp":"","excl_cookies":"","excl_querystrings":"","minify_html":0}' --format=json --allow-root
-  \wp option get cache-enabler --format=json --allow-root
+
+  # get cache enabler version
+  get_ce_version=$(wp plugin get cache-enabler --format=json --allow-root | jq -r '.version' | sed -e 's|\.|00|g')
+  if [[ "$get_ce_version" -le '1004009' ]]; then
+    echo "configure cache-enabler 1.4.9"
+    \wp option update cache-enabler '{"expires":6,"clear_on_upgrade":1,"new_post":1,"new_comment":1,"update_product_stock":0,"webp":0,"compress":1,"excl_ids":"","excl_paths":"","excl_cookies":"","incl_parameters":"","minify_html":0}' --format=json --allow-root
+  else
+    echo "configure cache-enabler 1.5.1+ or higher"
+    \wp option patch update cache_enabler cache_expiry_time '7' --allow-root
+    \wp option patch update cache_enabler clear_complete_cache_on_saved_post '1' --allow-root
+    \wp option patch update cache_enabler clear_complete_cache_on_new_comment '1' --allow-root
+    \wp option patch update cache_enabler clear_complete_cache_on_changed_plugin '1' --allow-root
+    \wp option patch update cache_enabler compress_cache '1' --allow-root
+  fi
+  if [[ "$WPCLI_CE_QUERYSTRING_INCLUDED" = [yY] ]]; then
+    if [[ "$get_ce_version" -le '1004009' ]]; then
+      \wp option patch update cache-enabler incl_parameters '/^fbclid|epik|klaviyo|ref|mc_(cid|eid)|utm_(source|medium|campaign|term|content|expid)|gclid|fb_(action_ids|action_types|source)|age-verified|ao_noptimize|usqp|cn-reloaded|_ga|_ke$/' --allow-root
+      \wp option pluck cache-enabler incl_parameters --format=json --allow-root
+    else
+      \wp option patch update cache_enabler excluded_query_strings '/^s=.+$/' --allow-root
+      \wp option pluck cache_enabler excluded_query_strings --format=json --allow-root
+    fi
+  fi
+  if [ -f /usr/bin/jq ]; then
+    if [[ "$get_ce_version" -le '1004009' ]]; then
+      \wp option get cache-enabler --format=json --allow-root | jq
+    else
+      \wp option get cache_enabler --format=json --allow-root | jq
+    fi
+  else
+    if [[ "$get_ce_version" -le '1004009' ]]; then
+      \wp option get cache-enabler --format=json --allow-root
+    else
+      \wp option get cache_enabler --format=json --allow-root
+    fi
+  fi
+  # add define('WP_CACHE', true); to wp-config.php
+  if [ ! "$(grep -w 'WP_CACHE' wp-config.php)" ]; then
+  sed -i "/define( 'DB_HOST', 'localhost' );/ a\
+define('WP_CACHE', true);\
+" wp-config.php
+  fi
   cecho "------------------------------------------------------------" $boldgreen
   \wp plugin install autoptimize --activate --allow-root
   configure_autoptimize
@@ -3110,7 +3347,7 @@ if [[ "$wpscache" = 'fastcgicache' ]]; then
         sed -i "s|^  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf;|  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf;|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|^  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|try_files /wp-content/cache/supercache/\$http_host|#try_files /wp-content/cache/supercache/\$http_host|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
-        sed -i "s|^  try_files \$cache_enabler_uri|  #try_files \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
+        sed -i "s|^  try_files \$cache_enabler_uri_webp \$cache_enabler_uri|  #try_files \$cache_enabler_uri_webp \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|    #try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;|    try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|include /usr/local/nginx/conf/php-wpsc.conf;|include /usr/local/nginx/conf/wpincludes/${vhostname}/php-fastcgicache.conf;|g" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         # insert /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf include file
@@ -3120,7 +3357,7 @@ if [[ "$wpscache" = 'fastcgicache' ]]; then
         sed -i "s|^  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf;|  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf;|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|^  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|try_files /wp-content/cache/supercache/\$http_host|#try_files /wp-content/cache/supercache/\$http_host|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
-        sed -i "s|^  try_files \$cache_enabler_uri|  #try_files \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
+        sed -i "s|^  try_files \$cache_enabler_uri_webp \$cache_enabler_uri|  #try_files \$cache_enabler_uri_webp \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|    #try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;|    try_files \$uri \$uri/ ${WPSUBDIR}/index.php?\$args;|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|include /usr/local/nginx/conf/php-wpsc.conf;|include /usr/local/nginx/conf/wpincludes/${vhostname}/php-fastcgicache.conf;|g" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         # insert /usr/local/nginx/conf/wpincludes/${vhostname}/wpfastcgicache_include_${vhostname}.conf include file
@@ -3133,13 +3370,13 @@ if [[ "$wpscache" = [nN] ]]; then
         sed -i "s|^  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}.conf|  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|^  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
         sed -i "s|try_files /wp-content/cache/supercache/\$http_host|#try_files /wp-content/cache/supercache/\$http_host|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
-        sed -i "s|#try_files \$cache_enabler_uri|try_files \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
+        sed -i "s|#try_files \$cache_enabler_uri_webp \$cache_enabler_uri|try_files \$cache_enabler_uri_webp \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.conf
     fi
     if [ -f "/usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf" ]; then
         sed -i "s|^  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}.conf|  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpcacheenabler_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|^  include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|  #include /usr/local/nginx/conf/wpincludes/${vhostname}/wpsupercache_${vhostname}.conf|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
         sed -i "s|try_files /wp-content/cache/supercache/\$http_host|#try_files /wp-content/cache/supercache/\$http_host|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
-        sed -i "s|#try_files \$cache_enabler_uri|try_files \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
+        sed -i "s|#try_files \$cache_enabler_uri_webp \$cache_enabler_uri|try_files \$cache_enabler_uri_webp \$cache_enabler_uri|" /usr/local/nginx/conf/conf.d/${vhostname}.ssl.conf
     fi
 fi
 
@@ -3325,12 +3562,12 @@ fi
 rm -rf .wpcli-status
 } 2>&1 | tee /home/nginx/domains/${vhostname}/log/wp_updater-\${DT}.log
 if [ -f /usr/sbin/sendmail ]; then
-sendmail -i $EMAIL <<END
+sendmail -i \$EMAIL <<END
 From: \$EMAILFROM
 To: \$EMAIL
 Subject: Wordpress WP-CLI Auto Update \$(date)
 
-\$(cat /home/nginx/domains/\${vhostname}/log/wp_updater-\${DT}.log)
+\$(cat /home/nginx/domains/${vhostname}/log/wp_updater-\${DT}.log)
 
 END
 else
@@ -3395,6 +3632,9 @@ if [ -f "${SCRIPT_DIR}/tools/autoprotect.sh" ]; then
 fi
 
 cmservice nginx reload
+echo
+nginx -t
+echo
 
 cmservice php-fpm restart
 if [[ "$PUREFTPD_DISABLED" = [nN] ]]; then
@@ -3443,6 +3683,8 @@ if [[ "$LETSENCRYPT_DETECT" = [yY] ]]; then
     cecho "-------------------------------------------------------------" $boldyellow
     echo
   fi
+  # run lestdebug.net API check
+  run_letsdebug "$vhostname"
 fi
 
 if [[ "$wpcli_ssldefault" = '1' ]]; then
@@ -3498,6 +3740,9 @@ if [[ "$vhostssl" = [yY] ]] || [[ "$vhostssl" = 'le' ]] || [[ "$vhostssl" = 'led
   cecho "SSL CSR File: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}.csr" $boldyellow
   cecho "Backup SSL Private Key: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}-backup.key" $boldyellow
   cecho "Backup SSL CSR File: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}-backup.csr" $boldyellow  
+  if [[ "$LETSENCRYPT_DETECT" = [yY] ]]; then
+    cecho "letsdebug API check log: ${CENTMINLOGDIR}/letsdebug-${vhostname}-${DT}.log" $boldyellow
+  fi
 fi
 echo
 cecho "upload files to /home/nginx/domains/$vhostname/public" $boldwhite
@@ -3570,6 +3815,17 @@ cecho "-------------------------------------------------------------" $boldyello
 cecho "Current vhost ssl files listing at: /usr/local/nginx/conf/ssl/${vhostname}" $boldwhite
 echo
 ls -Alhrt /usr/local/nginx/conf/ssl/${vhostname} | awk '{ printf "%-4s%-4s%-8s%-6s %s\n", $6, $7, $8, $5, $9 }'
+fi
+
+if [[ "$vhostssl_opt" -eq '2' || "$vhostssl_opt" -eq '4' ]] && [[ "$ISCF_ACHECK" = 'Cloudflare' || "$ISCF_ACHECK" = 'cloudflare' ]]; then
+  cecho "-------------------------------------------------------------" $boldyellow
+  echo "If using Cloudflare in front of site, disable CF option for"
+  echo "Always Use HTTPS in CF Dashboard Crypto Tab as Nginx will do"
+  echo "the non-https to https redirect on this end and not require"
+  echo "Cloudflare's Always Use HTTPS. If enabled it will cause the"
+  echo "error message: too many redirects"
+  echo
+  echo "Also change Cloudflare Flexible SSL to Full SSL non-strict mode"
 fi
 
 echo
@@ -3673,11 +3929,11 @@ fi
 } 2>&1 | tee /tmp/setupwp.log
 if [ -f /usr/sbin/sendmail ]; then
 sendmail -i $WPADMINEMAIL <<END
-From: \$WPADMINEMAIL_FROM
-To: \$WPADMINEMAIL
-Subject: ${vhostname} Wordpress Installed \$(date)
+From: $WPADMINEMAIL_FROM
+To: $WPADMINEMAIL
+Subject: ${vhostname} Wordpress Installed $(date)
 
-\$(cat /tmp/setupwp.log)
+$(cat /tmp/setupwp.log)
 
 END
 else

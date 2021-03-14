@@ -258,8 +258,13 @@ done
 
 ########################################################################
 funct_phpupgrade() {
+    CLI_PHP_VER="$1"
+    ENABLE_EXT_OVERRIDE="$2"
     axelsetup
 
+    if [[ "$ENABLE_EXT_OVERRIDE" = 'all' ]]; then
+        AUTODETECPHP_OVERRIDE='y'
+    fi
     if [ -f "$(which figlet)" ]; then
         figlet -ckf standard "PHP: Upgrade"
     fi
@@ -280,7 +285,7 @@ else
 fi
 
 echo " "
-if [[ "$UALL" = 'y' ]]; then 
+if [[ "$UALL" = 'y' || "$CLI_PHP_VER" ]]; then 
     key='y'
 else
     read -ep "PHP Upgrade/Downgrade - Would you like to continue? [y/n] " key
@@ -301,6 +306,10 @@ if [[ "$UALL" = 'y' ]]; then
     phpver=$(php-config --version)
     overwritephpfpmconf='n'
     lessphpmem='y'
+elif [[ "$CLI_PHP_VER" ]]; then
+    phpver="$CLI_PHP_VER"
+    overwritephpfpmconf='n'
+    # lessphpmem='y'
 else
     echo
     echo "----------------------------------------------------------------"
@@ -310,16 +319,55 @@ else
     echo "----------------------------------------------------------------"
     echo
     echo "Current PHP Version: $(php -v 2>&1 | head -n1 | cut -d "(" -f1 | awk '{print $2}')"
+    # display latest PHP version available for current detected
+    # PHP major version branch
+    if [ ! -f /usr/local/bin/get-php-ver ]; then
+        wget -q -4 https://github.com/centminmod/get-php-versions/raw/master/get-php-ver.sh -O /usr/local/bin/getphpver
+        chmod +x /usr/local/bin/getphpver
+    elif [ -f /usr/local/bin/get-php-ver ]; then
+        wget -q -4 https://github.com/centminmod/get-php-versions/raw/master/get-php-ver.sh -O /usr/local/bin/getphpver
+        chmod +x /usr/local/bin/getphpver
+    fi
+    if [ -f /usr/local/bin/getphpver ]; then
+        getlatest_phpbranch=$(php -v 2>&1 | head -n1 | cut -d "(" -f1 | awk '{print $2}' | awk  -F '.' '{print $1$2}')
+        if [[ "$getlatest_phpbranch" = '80' ]]; then
+            getlatest_phpbranchver=$(getphpver 80)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '74' ]]; then
+            getlatest_phpbranchver=$(getphpver 74)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '73' ]]; then
+            getlatest_phpbranchver=$(getphpver 73)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '72' ]]; then
+            getlatest_phpbranchver=$(getphpver 72)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '71' ]]; then
+            getlatest_phpbranchver=$(getphpver 71)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '70' ]]; then
+            getlatest_phpbranchver=$(getphpver 70)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '56' ]]; then
+            getlatest_phpbranchver=$(getphpver 56)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        elif [[ "$getlatest_phpbranch" = '55' ]]; then
+            getlatest_phpbranchver=$(getphpver 55)
+            echo "Latest PHP Version Installable: $getlatest_phpbranchver"
+        else
+            echo "Can Not Determine Latest PHP Version Installable: $getlatest_phpbranchver"
+        fi
+    fi
     echo
     read -ep "Enter PHP Version number you want to upgrade/downgrade to: " phpver
     echo
     # validate php version format is 7.3.x and not 7.3
     phpver_formatcheck="$(echo "$phpver" | grep '[0-9].[0-9].[0-9]')"
-    if [[ ! "$phpver_formatcheck" ]]; then
+    if [[ ! "$phpver_formatcheck" && "$phpver" != 'NGDEBUG' ]]; then
         echo
         echo "error: invalid php version format entered you entered: $phpver"
         echo
-        echo "correct exact format example is 7.3.12 not 7.3"
+        echo "correct exact format example is 7.3.17 not 7.3"
         echo "latest php versions are listed at https://php.net/"
         echo
         read -ep "Enter PHP Version number you want to upgrade/downgrade to: " phpver
@@ -364,14 +412,14 @@ fi # UALL
 ## grab newer custom written htpasswd.sh as well
 gethtpasswdsh
 
-PHPCURRENTVER=$(php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
+PHPCURRENTVER=$(php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
 PHPMUVER=$(echo "$phpver" | cut -d . -f1,2)
 PHPMU_ALPHAVER=$(echo "$phpver")
 
     phpng_download
     autodetectextensions
     zopcacheupgrade
-    addmysql_legacy
+    #addmysql_legacy
 
     echo "*************************************************"
     cecho "* Upgrading PHP" $boldgreen
@@ -403,7 +451,7 @@ funct_centos6check
 
     cd "$DIR_TMP"
 
-if [ "$(rpm -qa | grep '^php*' | grep -v 'phonon-backend-gstreamer')" ]; then
+if [ "$(rpm -qa | grep '^php*' | egrep -v 'phonon-backend-gstreamer|php56|php70|php71|php72|php73|php74|php80')" ]; then
     # IMPORTANT Erase any PHP installations first, otherwise conflicts may arise
     echo "yum -y erase php*"
     yum -y erase php*
@@ -563,7 +611,8 @@ fi
       exit
   else
       echo -e "\n`date`\nSuccess: PHP configure ok\n"
-        cmservice php-fpm restart
+        # cmservice php-fpm restart
+        # journalctl -xe -u php-fpm --no-pager | tail -20
   fi
 
 # error check
@@ -612,12 +661,13 @@ fi
     fi
     echo "PHPMUVER = $PHPMUVER"
     echo "PHP_PGO = $PHP_PGO"
-    if [[ "$PHP_PGO" = [yY] ]] && [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' ]]; then
+    if [[ "$PHP_PGO" = [yY] ]] && [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]]; then
         echo "make${MAKETHREADS_PHP} prof-gen"
         time make${MAKETHREADS_PHP} prof-gen
         if [ ! -d "$DIR_TMP/php_pgo_training_scripts" ]; then
             pushd "$DIR_TMP"
-            time git clone https://github.com/01org/php_pgo_training_scripts php_pgo_training_scripts
+            time git clone -b cmm https://github.com/centminmod/php_pgo_training_scripts php_pgo_training_scripts
+            # time git clone https://github.com/01org/php_pgo_training_scripts php_pgo_training_scripts
             popd
             GET_ROOT_PASS=$(awk -F "=" '/password/ {print $2}' /root/.my.cnf | sed -e "s|'||g")
             sed -i "s|define('DB_PASSWORD', 'root');|define('DB_PASSWORD', '$GET_ROOT_PASS');|" "$DIR_TMP/php_pgo_training_scripts/constants.php"
@@ -655,6 +705,12 @@ fi
               time ./sapi/cgi/php-cgi -T20 /opt/phpbench/detailed_benchmark.php
             fi
         elif [ -d "$DIR_TMP/php_pgo_training_scripts" ]; then
+            if [[ ! "$(git --git-dir=$DIR_TMP/php_pgo_training_scripts/.git/ log -1 2>&1 | grep -o 'php 8 support fix')" ]]; then
+              rm -rf "$DIR_TMP/php_pgo_training_scripts"
+              pushd "$DIR_TMP"
+              time git clone -b cmm https://github.com/centminmod/php_pgo_training_scripts php_pgo_training_scripts
+              popd
+            fi
             pushd "$DIR_TMP/php_pgo_training_scripts"
             git stash
             git pull
@@ -734,7 +790,8 @@ fi
       exit
   else
       echo -e "\n`date`\nSuccess: PHP make ok\n"
-        cmservice php-fpm restart
+      # cmservice php-fpm restart
+      # journalctl -xe -u php-fpm --no-pager | tail -20
   fi
 
 # error check
@@ -1018,14 +1075,14 @@ if [[ "$IGBINARY_INSTALL" = [yY] ]]; then
     fi
 fi
 
-addmysql_legacyinstall
+#addmysql_legacyinstall
 
-if [[ "$PHP_MCRYPTPECL" = [yY] ]] && [[ "$PHPMUVER" = '8.0' ]]; then
+if [[ "$PHP_MCRYPTPECL" = [yY] ]] && [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]]; then
     echo "PHP_MCRYPTPECL=$PHP_MCRYPTPECL"
     echo "PHPMVER=$PHPMVER"
     echo "PHPMUVER=$PHPMUVER"
-    if [ -f /usr/local/src/centminmod/addons/php74-mcrypt.sh ]; then
-        /usr/local/src/centminmod/addons/php74-mcrypt.sh menu
+    if [ -f /usr/local/src/centminmod/addons/php80-mcrypt.sh ]; then
+        /usr/local/src/centminmod/addons/php80-mcrypt.sh menu
     fi
 elif [[ "$PHP_MCRYPTPECL" = [yY] ]] && [[ "$PHPMUVER" = '7.4' ]]; then
     echo "PHP_MCRYPTPECL=$PHP_MCRYPTPECL"
@@ -1124,6 +1181,9 @@ sar_call
       /usr/local/src/centminmod/tools/php-systemd.sh fpm-systemd
     fi
     cmservice php-fpm restart
+    if [ -f /usr/bin/journalctl ]; then
+        journalctl -xe -u php-fpm --no-pager | tail -20
+    fi
 
 phpiadmin
 
@@ -1134,13 +1194,13 @@ if [[ "$zendopcacheon" = [yY] && "$OLD_OPCACHEPHP" != [yY] ]]; then
 fi
 
 # notes for users if PHP 7.0 detected
-php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
+php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2 | egrep -w '7.0||7.1|7.2|7.3|7.4|8.0'
 PHPSEVEN_CHECKVER=$?
 echo "$PHPSEVEN_CHECKVER"
 
 if [[ "$PHPSEVEN_CHECKVER" = '0' ]]; then
     cecho "***************************************************" $boldgreen
-    cecho "PHP 7.0/7.1/7.2/7.3/7.4 detected.. remove unsupported PHP extensions manually" $boldyellow
+    cecho "PHP 7.0/7.1/7.2/7.3/7.4/8.0 detected.. remove unsupported PHP extensions manually" $boldyellow
     cecho "by removing their ini files listed below (if list is empty = nothing to do):" $boldyellow
     cecho "***************************************************" $boldgreen
     echo
@@ -1154,45 +1214,73 @@ if [[ "$PHPSEVEN_CHECKVER" = '0' ]]; then
     #     cecho "#rm -rf ${CONFIGSCANDIR}/memcache.ini" $boldyellow
     # fi
     if [ -f "${CONFIGSCANDIR}/mongodb.ini" ]; then
-        cecho "#rm -rf ${CONFIGSCANDIR}/mongodb.ini" $boldyellow
+        cecho "#rm -f ${CONFIGSCANDIR}/mongodb.ini" $boldyellow
     fi
     # if [ -f ${CONFIGSCANDIR}/redis.ini ]; then
-    #     cecho "#rm -rf ${CONFIGSCANDIR}/redis.ini" $boldyellow
+    #     cecho "#rm -f ${CONFIGSCANDIR}/redis.ini" $boldyellow
     # fi
     if [ -f "${CONFIGSCANDIR}/suhosin.ini" ]; then
-        cecho "rm -rf ${CONFIGSCANDIR}/suhosin.ini" $boldyellow
+        cecho "rm -f ${CONFIGSCANDIR}/suhosin.ini" $boldyellow
     fi
     # if [[ "$PHPMUVER" = '7.3' && -f "${CONFIGSCANDIR}/mailparse.ini" ]]; then
     #     cecho "PHP 7.3 detected removing incompatible ${CONFIGSCANDIR}/mailparse.ini" $boldyellow
-    #     cecho "rm -rf ${CONFIGSCANDIR}/mailparse.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/mailparse.ini" $boldyellow
     # fi
     if [[ "$PHPMUVER" = '7.3' && -f "${CONFIGSCANDIR}/memcache.ini" ]]; then
         # cecho "PHP 7.3 detected removing incompatible ${CONFIGSCANDIR}/memcache.ini" $boldyellow
-        # cecho "rm -rf ${CONFIGSCANDIR}/memcache.ini" $boldyellow
+        # cecho "rm -f ${CONFIGSCANDIR}/memcache.ini" $boldyellow
         echo
     fi
     # if [[ "$PHPMUVER" = '7.3' && -f "${CONFIGSCANDIR}/memcached.ini" ]]; then
     #     cecho "PHP 7.3 detected removing incompatible ${CONFIGSCANDIR}/memcached.ini" $boldyellow
-    #     cecho "rm -rf ${CONFIGSCANDIR}/memcached.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/memcached.ini" $boldyellow
     # fi
-    if [[ "$PHPMUVER" = '8.0' && -f "${CONFIGSCANDIR}/mcrypt.ini" ]]; then
-        cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/mcrypt.ini" $boldyellow
-        cecho "rm -rf ${CONFIGSCANDIR}/mcrypt.ini" $boldyellow
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]] && [ -f "${CONFIGSCANDIR}/mcrypt.ini" ]; then
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/mcrypt.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/mcrypt.ini" $boldyellow
+    #     rm -f ${CONFIGSCANDIR}/mcrypt.ini
+    #     echo
+    # fi
+    if [[ "$PHPMUVER" = '8.1' || "$PHPVER_ID" -ge '80100' ]] && [ -f "${CONFIGSCANDIR}/geoip.ini" ]; then
+        cecho "PHP 8.1 detected removing incompatible ${CONFIGSCANDIR}/geoip.ini" $boldyellow
+        cecho "rm -f ${CONFIGSCANDIR}/geoip.ini" $boldyellow
         echo
     fi
-    if [[ "$PHPMUVER" = '8.0' && -f "${CONFIGSCANDIR}/geoip.ini" ]]; then
-        cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/geoip.ini" $boldyellow
-        cecho "rm -rf ${CONFIGSCANDIR}/geoip.ini" $boldyellow
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]] && [ -f "${CONFIGSCANDIR}/imagick.ini" ]; then
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/imagick.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/imagick.ini" $boldyellow
+    #     echo
+    # fi
+    if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]] && [ -f "${CONFIGSCANDIR}/memcache.ini" ]; then
+        cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/memcache.ini" $boldyellow
+        cecho "rm -f ${CONFIGSCANDIR}/memcache.ini" $boldyellow
         echo
     fi
-    if [[ "$PHPMUVER" = '8.0' && -f "${CONFIGSCANDIR}/imagick.ini" ]]; then
-        cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/imagick.ini" $boldyellow
-        cecho "rm -rf ${CONFIGSCANDIR}/imagick.ini" $boldyellow
-        echo
-    fi
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]] && [ -f "${CONFIGSCANDIR}/igbinary.ini" ]; then
+    #     # disable igbinary on PHP 8.0+ due to segfaulting
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/igbinary.ini due to segfaults" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/igbinary.ini" $boldyellow
+    #     rm -f ${CONFIGSCANDIR}/igbinary.ini
+    #     echo
+    # fi
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]] && [ -f "${CONFIGSCANDIR}/redis.ini" ]; then
+    #     # disable redis on PHP 8.0+ due to segfaulting
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/redis.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/redis.ini" $boldyellow
+    #     rm -f ${CONFIGSCANDIR}/redis.ini
+    #     echo
+    # fi
     echo
     cecho "then restart PHP-FPM again..." $boldyellow
     echo
+fi
+# timezonedb php extension not compatible with PHP 5.6
+if [[ "$PHPMUVER" = '5.6' && -f "${CONFIGSCANDIR}/timezonedb.ini" ]]; then
+    check_timezonedb_installed=$(php -m 2>&1 | grep -v 'Unable to load dynamic library' | grep -o timezonedb)
+    if [[ "$check_timezonedb_installed" != 'timezonedb' ]]; then
+        rm -f "${CONFIGSCANDIR}/timezonedb.ini"
+        cmservice php-fpm restart >/dev/null 2>&1
+    fi
 fi
 
     php-config
@@ -1201,7 +1289,7 @@ fi
         cecho "* PHP compiled with CPU_MARCH=$CPU_MARCH" $boldgreen
     fi
     cecho "* PHP upgraded and auto reinstalled PHP extensions" $boldgreen
-    if [[ "$PHP_PGO" = [yY] ]] && [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' ]]; then
+    if [[ "$PHP_PGO" = [yY] ]] && [[ "$PHPMUVER" = '7.0' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' ]]; then
         cecho "* PHP_PGO='y' detected. PHP compiled with Profile Guided Optimizations" $boldgreen
         cecho "* https://software.intel.com/en-us/blogs/2015/10/09/pgo-let-it-go-php" $boldgreen
     fi
@@ -1226,32 +1314,5 @@ fi
 
 # error check
 ################
-
-
-if [[ "$ENABLE_MENU" != [yY] ]]; then
-
-ASK "Do would you like to run script cleanup (Highly recommended) ? [y/n] "
-if [[ "$key" = [yY] ]];
-then
-    rm -rf "$DIR_TMP"
-    echo "Temporary files/folders removed"
-fi
-
-ASK "Do you want to delete this script ? [y/n] "
-if [[ "$key" = [yY] ]];
-then
-    echo "*************************************************"
-    cecho "* Deleting Centmin script... " $boldgreen
-    echo "*************************************************"
-    echo "Removing..."
-
-rm -f "$0"
-
-    echo "*************************************************"
-    cecho "* Centmin script deleted" $boldgreen
-    echo "*************************************************"
-fi
-
-fi
 
 }

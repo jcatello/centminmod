@@ -1,5 +1,7 @@
 #!/bin/bash
 ######################################################
+# tools/emailnotify.sh
+# https://community.centminmod.com/threads/18184/
 # utilise tools/email.sh setup primary & secondary
 # email addresses populated by user at initial install
 # time to send centminmod related email notifications
@@ -11,6 +13,25 @@ DT=$(date +"%d%m%y-%H%M%S")
 CENTMINLOGDIR='/root/centminlogs'
 SCRIPT_DIR=$(readlink -f $(dirname ${BASH_SOURCE[0]}))
 
+# Amazon SES smtp based email sending settings
+# add these variables to persistent config file
+# /etc/centminmod/custom_config.inc
+# for them to persistent. Using below variables will 
+# be overridden on centminmod updates so persistent
+# config file method is highly recommended
+# Amazon SES emails are sent via native openssl s_client
+# https://www.openssl.org/docs/man1.1.1/man1/s_client.html
+EMAILNOTIFY_SES='n'
+EMAILNOTIFY_SES_FROM_EMAIL='your_ses_verified_from_email_address'
+EMAILNOTIFY_SES_TO_EMAIL='your_desired_email_to_receive_server_emails'
+# CC and BCC options are optional. If not need, set and leave 
+# empty without a value
+EMAILNOTIFY_SES_CC_EMAIL='your_desired_cc_email_to_receive_server_emails'
+EMAILNOTIFY_SES_BCC_EMAIL='your_desired_bcc_email_to_receive_server_emails'
+EMAILNOTIFY_SES_SMTP_USERNAME='your_ses_smtp_username'
+EMAILNOTIFY_SES_SMTP_PASSWORD='your_ses_smtp_password'
+EMAILNOTIFY_SES_SMTP_SERVER='your_ses_smtp_server'
+EMAILNOTIFY_SES_SMTP_PORT='587'
 ######################################################
 # Setup Colours
 black='\E[30;40m'
@@ -58,9 +79,93 @@ for g in "" e f; do
     alias ${g}grep="LC_ALL=C ${g}grep"  # speed-up grep, egrep, fgrep
 done
 
+if [ -f "/etc/centminmod/custom_config.inc" ]; then
+  # default is at /etc/centminmod/custom_config.inc
+  dos2unix -q "/etc/centminmod/custom_config.inc"
+  . "/etc/centminmod/custom_config.inc"
+fi
+
 symlink_setup_emailnotify() {
   if [[ -f "${SCRIPT_DIR}/emailnotify.sh" && ! -h /usr/local/bin/emailnotify ]]; then
     ln -s "${SCRIPT_DIR}/emailnotify.sh" /usr/local/bin/emailnotify >/dev/null 2>&1
+  fi
+}
+
+send_ses_credential_encode() {
+  SES_SMTP_USER=$(echo -n "$EMAILNOTIFY_SES_SMTP_USERNAME" | openssl enc -base64)
+  SES_SMTP_PASS=$(echo -n "$EMAILNOTIFY_SES_SMTP_PASSWORD" | openssl enc -base64)
+}
+
+send_ses_mail() {
+  # send email using native openssl client
+  bodyget=$1
+  subject=$2
+  toemail=$3
+  send_ses_credential_encode
+  if [ "$toemail" ]; then
+    EMAILNOTIFY_SES_TO_EMAIL="$toemail"
+  else
+    EMAILNOTIFY_SES_TO_EMAIL="$EMAILNOTIFY_SES_TO_EMAIL"
+  fi
+  if [ -f "$bodyget" ]; then
+    body=$(cat "$bodyget")
+  else
+    body="$bodyget"
+  fi
+  email_date=$(date)
+  SES_FROM_DOMAIN=$(echo "$EMAILNOTIFY_SES_FROM_EMAIL" | awk -F '@' '{print $2}')
+  if [ "$EMAILNOTIFY_SES_CC_EMAIL" ]; then
+    ses_cc="\nCc: $EMAILNOTIFY_SES_CC_EMAIL"
+  else
+    ses_cc=
+  fi
+  if [ "$EMAILNOTIFY_SES_BCC_EMAIL" ]; then
+    ses_bcc="\nBcc: $EMAILNOTIFY_SES_BCC_EMAIL"
+  else
+    ses_bcc=
+  fi
+cat > /tmp/email_body_template.txt <<EOF
+EHLO $SES_FROM_DOMAIN
+AUTH LOGIN
+$SES_SMTP_USER
+$SES_SMTP_PASS
+MAIL FROM: ${EMAILNOTIFY_SES_FROM_EMAIL}
+RCPT TO: ${EMAILNOTIFY_SES_TO_EMAIL}
+DATA
+From: $EMAILNOTIFY_SES_FROM_EMAIL <${EMAILNOTIFY_SES_FROM_EMAIL}>
+To: ${EMAILNOTIFY_SES_TO_EMAIL}${ses_cc}${ses_bcc}
+Subject: $subject $(hostname) $email_date
+
+$body
+.
+QUIT
+EOF
+  if [ -f /usr/bin/systemctl ]; then
+    # centos 7 and higher openssl supported option
+    brief_opt=' -brief'
+  else
+    brief_opt=
+  fi
+  if [[ "$EMAILNOTIFY_SES_SMTP_PORT" = '587' ]]; then
+    echo "----------------------------------------------------"
+    echo "Send email via SES using openssl client"
+    echo "Success email send will end with line:"
+    echo "451 4.4.2 Timeout waiting for data from client"
+    echo "and return to command prompt after 10 seconds"
+    echo "----------------------------------------------------"
+    echo
+    openssl s_client -crlf -quiet${brief_opt} -starttls smtp -connect ${EMAILNOTIFY_SES_SMTP_SERVER}:${EMAILNOTIFY_SES_SMTP_PORT} < /tmp/email_body_template.txt
+    # rm -f /tmp/email_body_template.txt
+  elif [[ "$EMAILNOTIFY_SES_SMTP_PORT" = '465' ]]; then
+    echo "----------------------------------------------------"
+    echo "Send email via SES using openssl client"
+    echo "Success email send will end with line:"
+    echo "451 4.4.2 Timeout waiting for data from client"
+    echo "and return to command prompt after 10 seconds"
+    echo "----------------------------------------------------"
+    echo
+    openssl s_client -crlf -quiet${brief_opt} -connect ${EMAILNOTIFY_SES_SMTP_SERVER}:${EMAILNOTIFY_SES_SMTP_PORT} < /tmp/email_body_template.txt
+    # rm -f /tmp/email_body_template.txt
   fi
 }
 
@@ -202,14 +307,22 @@ get_mailid() {
 
 send_mail() {
   if [ -f /etc/centminmod/email-primary.ini ]; then
-    symlink_setup_emailnotify
     postfix_update
-    checks
+    if [[ "$EMAILNOTIFY_SES" != [yY] ]]; then
+      symlink_setup_emailnotify
+      checks
+    fi
     email_date=$(date)
     primary_email=$(head -n1 /etc/centminmod/email-primary.ini)
     secondary_email=$(head -n1 /etc/centminmod/email-secondary.ini)
     body=$1
     subject=$2
+    toemail=$3
+    if [ "$toemail" ]; then
+      to_email="$toemail"
+    else
+      to_email=$primary_email
+    fi
     if [ -f "$body" ]; then
       if [[ "$failipv4" = [yY] && -f /tmp/check_fail_msg.log ]]; then
         # append check_fail_msg to body of email so user is aware of issue
@@ -220,31 +333,31 @@ send_mail() {
         bodyfile=/tmp/emailnotify_temp.log
         echo "$body" > "$bodyfile"
         if [ -f /usr/sbin/sendmail ]; then
-(cat - $bodyfile)<<END | sendmail -t $primary_email
+(cat - $bodyfile)<<END | sendmail -t $to_email
 From: $primary_email
-To: $primary_email
+To: $to_email
 Subject:  ${subject} - $(hostname) ${email_date}
 
 END
           rm -f "$bodyfile"
         else
-          echo "echo \"$bodyecho\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $primary_email"
-          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $primary_email
+          echo "echo \"$bodyecho\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $to_email"
+          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $to_email
         fi
       else
         bodyfile=/tmp/emailnotify_temp.log
         cat "$body" > "$bodyfile"
         if [ -f /usr/sbin/sendmail ]; then
-(cat - $bodyfile)<<END | sendmail -t $primary_email
+(cat - $bodyfile)<<END | sendmail -t $to_email
 From: $primary_email
-To: $primary_email
+To: $to_email
 Subject:  ${subject} - $(hostname) ${email_date}
 
 END
           rm -f "$bodyfile"
         else
-          echo "cat \"$body\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $primary_email"
-          cat "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $primary_email
+          echo "cat \"$body\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $to_email"
+          cat "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $to_email
         fi
       fi
       get_mailid
@@ -258,31 +371,31 @@ END
         bodyfile=/tmp/emailnotify_temp.log
         echo "$body" > "$bodyfile"
         if [ -f /usr/sbin/sendmail ]; then
-(cat - $bodyfile)<<END | sendmail -t $primary_email
+(cat - $bodyfile)<<END | sendmail -t $to_email
 From: $primary_email
-To: $primary_email
+To: $to_email
 Subject:  ${subject} - $(hostname) ${email_date}
 
 END
           rm -f "$bodyfile"
         else
-          echo "echo \"$bodyecho\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $primary_email"
-          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $primary_email
+          echo "echo \"$bodyecho\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $to_email"
+          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $to_email
         fi
       else
         bodyfile=/tmp/emailnotify_temp.log
         echo "$body" > "$bodyfile"
         if [ -f /usr/sbin/sendmail ]; then
-(cat - $bodyfile)<<END | sendmail -t $primary_email
+(cat - $bodyfile)<<END | sendmail -t $to_email
 From: $primary_email
-To: $primary_email
+To: $to_email
 Subject:  ${subject} - $(hostname) ${email_date}
 
 END
           rm -f "$bodyfile"
         else
-          echo "echo \"$body\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $primary_email"
-          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $primary_email
+          echo "echo \"$body\" | mail -s \" ${subject} - $(hostname) ${email_date}\" $to_email"
+          echo "$body" | mail -s " ${subject} - $(hostname) ${email_date}" $to_email
         fi
       fi
       get_mailid
@@ -300,6 +413,7 @@ usage() {
   echo "Usage:"
   echo
   echo "$0 send emailbody emailsubject"
+  echo "$0 send emailbody emailsubject toemail-address"
   echo
 }
 
@@ -310,7 +424,11 @@ case "$1" in
       echo "error: incorrect paramters"
       usage
     else
-      send_mail "${2}" "${3}"
+      if [[ "$EMAILNOTIFY_SES" = [yY] ]]; then
+        send_ses_mail "${2}" "${3}" "${4}"
+      else
+        send_mail "${2}" "${3}" "${4}"
+      fi
     fi
     ;;
   * )

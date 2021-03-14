@@ -140,9 +140,12 @@ if [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module
   LISTENOPT='ssl spdy http2'
   COMP_HEADER='spdy_headers_comp 5'
   SPDY_HEADER='add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module' ]]; then
   HTTPTWO=y
     # check if backlogg directive is supported for listen 443 port - only needs to be added once globally for all nginx vhosts
@@ -154,7 +157,7 @@ elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_modu
     #       ADD_BACKLOG=" backlog=$SET_NGINXBACKLOG"
     #   fi
     # fi
-    if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/ | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
+    if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/*.conf | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
       # check if reuseport is supported for listen 443 port - only needs to be added once globally for all nginx vhosts
       NGXVHOST_CHECKREUSEPORT=$(grep --color -Ro SO_REUSEPORT /usr/src/kernels/* | head -n1 | awk -F ":" '{print $2}')
       if [[ "$NGXVHOST_CHECKREUSEPORT" = 'SO_REUSEPORT' ]]; then
@@ -168,9 +171,12 @@ elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_modu
     fi
   COMP_HEADER='#spdy_headers_comp 5'
   SPDY_HEADER='#add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 else
   HTTPTWO=n
   LISTENOPT='ssl spdy'
@@ -367,6 +373,18 @@ cmchkconfig() {
   fi
 }
 
+run_letsdebug() {
+    letsdebug_domain=$1
+    if [ ! -f /usr/bin/jq ]; then
+        yum -q -y install jq
+    fi
+    letsdebug_id=$(curl -s --data "{\"method\":\"http-01\",\"domain\":\"$letsdebug_domain\"}" -H 'content-type: application/json' https://letsdebug.net | jq -r '.ID')
+    sleep 6
+    echo
+    curl -s -H 'accept: application/json' "https://letsdebug.net/$letsdebug_domain/${letsdebug_id}" | jq | tee "${CENTMINLOGDIR}/letsdebug-${letsdebug_domain}-${DT}.log"
+    echo
+}
+
 pureftpinstall() {
 	if [ ! -f /usr/bin/pure-pw ]; then
 		echo "pure-ftpd not installed"
@@ -506,7 +524,50 @@ else
   SELFSIGNEDSSL_OU="$SELFSIGNEDSSL_OU"
 fi
 
-# self-signed ssl cert with SANs
+if [[ "$SELFSIGNEDSSL_ECDSA" = [yY] ]]; then
+  # self-signed ssl cert with SANs for ECDSA
+cat > /tmp/reqecc.cnf <<EOF
+[req]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt = no
+[req_distinguished_name]
+C = ${SELFSIGNEDSSL_C}
+ST = ${SELFSIGNEDSSL_ST}
+L = ${SELFSIGNEDSSL_L}
+O = ${vhostname}
+OU = ${vhostname}
+CN = ${vhostname}
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+cat > /tmp/v3extecc.cnf <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+  openssl ecparam -out ${vhostname}.key -name prime256v1 -genkey
+  openssl req -new -sha256 -key ${vhostname}.key -nodes -out ${vhostname}.csr -config /tmp/reqecc.cnf
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3extecc.cnf
+  openssl x509 -noout -text < ${vhostname}.crt
+
+  rm -f /tmp/reqecc.cnf
+  rm -f /tmp/v3extecc.cnf
+else
+  # self-signed ssl cert with SANs
 cat > /tmp/req.cnf <<EOF
 [req]
 default_bits       = 2048
@@ -539,61 +600,22 @@ subjectAltName = @alt_names
 DNS.1 = ${vhostname}
 DNS.2 = www.${vhostname}
 EOF
+  echo
+  cat /tmp/req.cnf
+  echo
+  cat /tmp/v3ext.cnf
+  echo
+  openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
+  # openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
+  openssl req -noout -text -in ${vhostname}.csr | grep DNS
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
+  # openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
+  
+  rm -f /tmp/req.cnf
+  rm -f /tmp/v3ext.cnf
+fi
 
-echo
-cat /tmp/req.cnf
-echo
-cat /tmp/v3ext.cnf
-echo
-openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
-# openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
-openssl req -noout -text -in ${vhostname}.csr | grep DNS
-openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
-# openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
 
-rm -f /tmp/req.cnf
-rm -f /tmp/v3ext.cnf
-
-# echo
-# cecho "---------------------------------------------------------------" $boldyellow
-# cecho "Generating backup CSR and private key for HTTP Public Key Pinning..." $boldgreen
-# cecho "creating CSR File: ${vhostname}-backup.csr" $boldgreen
-# cecho "creating private key: ${vhostname}-backup.key" $boldgreen
-# sleep 5
-
-# openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}-backup.csr -keyout ${vhostname}-backup.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${SELFSIGNEDSSL_O}/OU=${SELFSIGNEDSSL_OU}/CN=${vhostname}"
-
-# echo
-# cecho "---------------------------------------------------------------" $boldyellow
-# cecho "Extracting Base64 encoded information for primary and secondary" $boldgreen
-# cecho "private key's SPKI - Subject Public Key Information" $boldgreen
-# cecho "Primary private key - ${vhostname}.key" $boldgreen
-# cecho "Backup private key - ${vhostname}-backup.key" $boldgreen
-# cecho "For HPKP - HTTP Public Key Pinning hash generation..." $boldgreen
-# sleep 5
-
-# echo
-# cecho "extracting SPKI Base64 encoded hash for primary private key = ${vhostname}.key ..." $boldgreen
-
-# openssl rsa -in ${vhostname}.key -outform der -pubout | openssl dgst -sha256 -binary | openssl enc -base64 | tee -a /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt
-
-# echo
-# cecho "extracting SPKI Base64 encoded hash for backup private key = ${vhostname}-backup.key ..." $boldgreen
-
-# openssl rsa -in ${vhostname}-backup.key -outform der -pubout | openssl dgst -sha256 -binary | openssl enc -base64 | tee -a /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt
-
-# echo
-# cecho "HTTP Public Key Pinning Header for Nginx" $boldgreen
-
-# echo
-# cecho "for 7 days max-age including subdomains" $boldgreen
-# echo
-# echo "add_header Public-Key-Pins 'pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt)\"; pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt)\"; max-age=86400; includeSubDomains';"
-
-# echo
-# cecho "for 7 days max-age excluding subdomains" $boldgreen
-# echo
-# echo "add_header Public-Key-Pins 'pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-primary-pin.txt)\"; pin-sha256=\"$(cat /usr/local/nginx/conf/ssl/${vhostname}/hpkp-info-secondary-pin.txt)\"; max-age=86400';"
 
 if [[ ! -f "$(find /usr/local/nginx/conf/ssl -type f -name "dhparam.pem" | head -n1)" ]]; then
   echo
@@ -990,7 +1012,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
@@ -1022,10 +1044,10 @@ server {
 
   }
 
-  ${PRESTATIC_INCLUDES}
-  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/php.conf;
   ${MULTIPHP_INCLUDES}
+  ${PRESTATIC_INCLUDES}
+  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/drop.conf;
   #include /usr/local/nginx/conf/errorpage.conf;
   include /usr/local/nginx/conf/vts_server.conf;
@@ -1084,7 +1106,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
   $COMP_HEADER;
   ssl_buffer_size 1369;
   ssl_session_tickets on;
@@ -1130,10 +1152,10 @@ server {
 
   }
 
-  ${PRESTATIC_INCLUDES}
-  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/php.conf;
   ${MULTIPHP_INCLUDES}
+  ${PRESTATIC_INCLUDES}
+  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/drop.conf;
   #include /usr/local/nginx/conf/errorpage.conf;
   include /usr/local/nginx/conf/vts_server.conf;
@@ -1183,7 +1205,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
   $COMP_HEADER;
   ssl_buffer_size 1369;
   ssl_session_tickets on;
@@ -1230,10 +1252,10 @@ server {
 
   }
 
-  ${PRESTATIC_INCLUDES}
-  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/php.conf;
   ${MULTIPHP_INCLUDES}
+  ${PRESTATIC_INCLUDES}
+  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/drop.conf;
   #include /usr/local/nginx/conf/errorpage.conf;
   include /usr/local/nginx/conf/vts_server.conf;
@@ -1280,7 +1302,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
   $COMP_HEADER;
   ssl_buffer_size 1369;
   ssl_session_tickets on;
@@ -1327,10 +1349,10 @@ server {
 
   }
 
-  ${PRESTATIC_INCLUDES}
-  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/php.conf;
   ${MULTIPHP_INCLUDES}
+  ${PRESTATIC_INCLUDES}
+  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/drop.conf;
   #include /usr/local/nginx/conf/errorpage.conf;
   include /usr/local/nginx/conf/vts_server.conf;
@@ -1339,6 +1361,14 @@ ESS
 fi # sslconfig = yd
 
 else
+
+# set web root differently if it's main hostname
+
+if [[ "$create_mainhostname_ssl" = [yY] ]]; then
+  PUBLIC_WEBROOT='root   html;'
+else
+  PUBLIC_WEBROOT="root /home/nginx/domains/$vhostname/public;"
+fi
 
 cat > "/usr/local/nginx/conf/conf.d/$vhostname.conf"<<END
 # Centmin Mod Getting Started Guide
@@ -1366,7 +1396,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
@@ -1398,10 +1428,10 @@ server {
 
   }
 
-  ${PRESTATIC_INCLUDES}
-  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/php.conf;
   ${MULTIPHP_INCLUDES}
+  ${PRESTATIC_INCLUDES}
+  include /usr/local/nginx/conf/staticfiles.conf;
   include /usr/local/nginx/conf/drop.conf;
   #include /usr/local/nginx/conf/errorpage.conf;
   include /usr/local/nginx/conf/vts_server.conf;
@@ -1428,6 +1458,9 @@ if [ -f "${CUR_DIR}/tools/autoprotect.sh" ]; then
 fi
 
 service nginx restart
+echo
+nginx -t
+echo
 
 if [[ "$PUREFTPD_DISABLED" = [nN] ]]; then
   cmservice pure-ftpd restart
@@ -1472,6 +1505,8 @@ if [[ "$LETSENCRYPT_DETECT" = [yY] ]]; then
     cecho "-------------------------------------------------------------" $boldyellow
     echo
   fi
+  # run lestdebug.net API check
+  run_letsdebug "$vhostname"
 fi
 
 echo 
@@ -1510,6 +1545,9 @@ if [[ "$vhostssl" = [yY] ]]; then
   cecho "SSL CSR File: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}.csr" $boldyellow
   cecho "Backup SSL Private Key: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}-backup.key" $boldyellow
   cecho "Backup SSL CSR File: /usr/local/nginx/conf/ssl/${vhostname}/${vhostname}-backup.csr" $boldyellow    
+  if [[ "$LETSENCRYPT_DETECT" = [yY] ]]; then
+    cecho "letsdebug API check log: ${CENTMINLOGDIR}/letsdebug-${vhostname}-${DT}.log" $boldyellow
+  fi
 fi
 echo
 if [[ "$create_mainhostname_ssl" != [yY] ]]; then

@@ -25,6 +25,7 @@ FORCE_IPVFOUR='y' # curl/wget commands through script force IPv4
 # GCC options
 GCC_SEVEN='n'
 GCC_EIGHT='n'
+GCC_NINE='n'
 OPT_LEVEL='-O3'
 MARCH_TARGETNATIVE='n' # for intel 64bit only set march=native, if no set to x86-64
 ###############################################################################
@@ -39,16 +40,16 @@ ENABLE_LIBASS='y'
 ENABLE_ZIMG='y'
 ENABLE_OPENCV='n'
 # http://downloads.xiph.org/releases/ogg/
-LIBOGG_VER='1.3.3'
+LIBOGG_VER='1.3.4'
 # http://downloads.xiph.org/releases/vorbis/
 LIBVORBIS_VER='1.3.6'
 GD_ENABLE='n'
-NASM_SOURCEINSTALL='n'
+NASM_SOURCEINSTALL='y'
 NASM_VER='2.14'
 YASM_VER='1.3.0'
 FDKAAC_VER='0.1.6'
 FONTCONFIG_VER='2.13.1'
-FREETYPE_VER='2.10.0'
+FREETYPE_VER='2.10.1'
 ###############################################################################
 
 shopt -s expand_aliases
@@ -57,7 +58,7 @@ for g in "" e f; do
 done
 
 if [ ! -d "$CENTMINLOGDIR" ]; then
-	mkdir -p "$CENTMINLOGDIR"
+  mkdir -p "$CENTMINLOGDIR"
 fi
 
 if [ -f /proc/user_beancounters ]; then
@@ -143,7 +144,7 @@ else
 fi
 
 if [[ "$DISABLE_NETWORKFFMPEG" = [yY] ]]; then
-	DISABLE_FFMPEGNETWORK=' --disable-network'
+  DISABLE_FFMPEGNETWORK=' --disable-network'
 fi
 
 if [[ "$ENABLE_ZIMG" = [yY] ]]; then
@@ -202,75 +203,84 @@ fi
 
 if [[ "$GCC_SEVEN" = [yY] && "$(uname -m)" = 'x86_64' && -f /opt/rh/devtoolset-7/root/usr/bin/gcc && -f /opt/rh/devtoolset-7/root/usr/bin/g++ ]]; then
   source /opt/rh/devtoolset-7/enable
-  export CFLAGS="${OPT_LEVEL} -march=${MARCH_TARGET} -Wimplicit-fallthrough=0"
+  export CFLAGS="${OPT_LEVEL} -march=${MARCH_TARGET} -Wimplicit-fallthrough=0 -Wno-pedantic"
   export CXXFLAGS="${CFLAGS}"
 fi
 
 if [[ "$GCC_EIGHT" = [yY] && "$(uname -m)" = 'x86_64' && -f /opt/rh/devtoolset-8/root/usr/bin/gcc && -f /opt/rh/devtoolset-8/root/usr/bin/g++ ]]; then
   source /opt/rh/devtoolset-8/enable
-  export CFLAGS="${OPT_LEVEL} -march=${MARCH_TARGET} -Wimplicit-fallthrough=0"
+  export CFLAGS="${OPT_LEVEL} -march=${MARCH_TARGET} -Wimplicit-fallthrough=0 -Wno-pedantic"
+  export CXXFLAGS="${CFLAGS}"
+fi
+
+if [[ "$GCC_NINE" = [yY] && "$(uname -m)" = 'x86_64' && -f /opt/rh/devtoolset-9/root/usr/bin/gcc && -f /opt/rh/devtoolset-9/root/usr/bin/g++ ]]; then
+  source /opt/rh/devtoolset-9/enable
+  export CFLAGS="${OPT_LEVEL} -march=${MARCH_TARGET} -Wimplicit-fallthrough=0 -Wno-pedantic"
   export CXXFLAGS="${CFLAGS}"
 fi
 
 do_continue() {
-	# echo
-	# echo "-------------------------------------------------------------------------"
-	# echo "Installing ffmpeg-php extension relies on the ffmpeg-php developer"
-	# echo "to keep ffmpeg-php updated for ffmpeg compatibility and that has"
-	# echo "been flaky with various compatibility issues. There have been work"
-	# echo "arounds like https://community.centminmod.com/posts/24018/ but "
-	# echo "there are no guarantees due to issues outlined in this thread post"
-	# echo "at https://community.centminmod.com/posts/7078/"
-	# echo
-	# echo "if ffmpeg-php fails to compile, you can unload it by removing the"
-	# echo "settings file at /etc/centminmod/php.d/ffmpeg.ini and restarting"
-	# echo "php-fpm service"
-	# echo "-------------------------------------------------------------------------"
-	echo
-	read -ep "Do you want to continue with ffmpeg binary only install ? [y/n] " cont_install
-	echo
+  # echo
+  # echo "-------------------------------------------------------------------------"
+  # echo "Installing ffmpeg-php extension relies on the ffmpeg-php developer"
+  # echo "to keep ffmpeg-php updated for ffmpeg compatibility and that has"
+  # echo "been flaky with various compatibility issues. There have been work"
+  # echo "arounds like https://community.centminmod.com/posts/24018/ but "
+  # echo "there are no guarantees due to issues outlined in this thread post"
+  # echo "at https://community.centminmod.com/posts/7078/"
+  # echo
+  # echo "if ffmpeg-php fails to compile, you can unload it by removing the"
+  # echo "settings file at /etc/centminmod/php.d/ffmpeg.ini and restarting"
+  # echo "php-fpm service"
+  # echo "-------------------------------------------------------------------------"
+  echo
+  read -ep "Do you want to continue with ffmpeg binary only install ? [y/n] " cont_install
+  echo
 
 if [[ "$cont_install" != [yY] ]]; then
-	echo "aborting install..."
-	exit 1
+  echo "aborting install..."
+  exit 1
 fi
 }
 
 install_nasm() {
-	if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
-		if [ -f /usr/bin/nasm ]; then
-			yum -y remove nasm
-			hash -r
-		fi
-		cd ${OPT}/ffmpeg_sources
-		curl -O -L "https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VER}/nasm-${NASM_VER}.tar.gz"
-		tar xvf "nasm-${NASM_VER}.tar.gz"
-		cd "nasm-${NASM_VER}"
-		make clean
-		./autogen.sh
-		./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin"
-		make${MAKETHREADS}
-		make install
-	else
-		if [[ -f /usr/bin/nasm && "$(nasm --version | grep -o '2.13')" != '2.13' ]]; then
-			yum -y remove nasm
-			hash -r
-		fi
-		# install from official nasm yum repo
-		yum-config-manager --add-repo https://www.nasm.us/nasm.repo
-		yum -y install nasm --disableplugin=priorities
-	fi
+  if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+    if [ -f /usr/bin/nasm ]; then
+      if [[ "$(yum versionlock list | grep -o nasm)" = 'nasm' ]]; then
+        yum versionlock delete nasm
+      fi
+      yum -y remove nasm --disableplugin=priorities
+      hash -r
+    fi
+    cd ${OPT}/ffmpeg_sources
+    curl -O -L "https://www.nasm.us/pub/nasm/releasebuilds/${NASM_VER}/nasm-${NASM_VER}.tar.gz"
+    tar xvf "nasm-${NASM_VER}.tar.gz"
+    cd "nasm-${NASM_VER}"
+    make clean
+    ./autogen.sh
+    ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin"
+    make${MAKETHREADS}
+    make install
+  else
+    if [[ -f /usr/bin/nasm && "$(nasm --version | grep -o '2.13')" != '2.13' ]]; then
+      yum -y remove nasm
+      hash -r
+    fi
+    # install from official nasm yum repo
+    yum-config-manager --add-repo https://www.nasm.us/nasm.repo
+    yum -y install nasm --disableplugin=priorities
+  fi
 }
 
 install_yasm() {
-	cd ${OPT}/ffmpeg_sources
-	curl -O -L "https://www.tortall.net/projects/yasm/releases/yasm-${YASM_VER}.tar.gz"
-	tar xzvf "yasm-${YASM_VER}.tar.gz"
-	cd "yasm-${YASM_VER}"
-	make clean
-	./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin"
-	make${MAKETHREADS}
-	make install
+  cd ${OPT}/ffmpeg_sources
+  curl -O -L "https://www.tortall.net/projects/yasm/releases/yasm-${YASM_VER}.tar.gz"
+  tar xzvf "yasm-${YASM_VER}.tar.gz"
+  cd "yasm-${YASM_VER}"
+  make clean
+  ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin"
+  make${MAKETHREADS}
+  make install
 }
 
 install_freetype() {
@@ -299,13 +309,13 @@ install_zimg() {
 install() {
 
 echo
-echo "Installing FFMPEG..."	
+echo "Installing FFMPEG..." 
 
 # check if IUS Community git2u packages installed
 if [[ "$(rpm -ql git2u-core | grep '\/usr\/bin\/git$')" = '/usr/bin/git' ]]; then
-	yum -y install gperf autoconf automake cmake freetype-devel gcc gcc-c++ libtool make mercurial pkgconfig zlib-devel numactl-devel libass libass-devel opencv opencv-devel
+  yum -y install gperf autoconf automake cmake freetype-devel gcc gcc-c++ libtool make mercurial pkgconfig zlib-devel numactl-devel libass libass-devel opencv opencv-devel
 else
-	yum -y install gperf autoconf automake cmake freetype-devel gcc gcc-c++ git libtool make mercurial pkgconfig zlib-devel numactl-devel libass libass-devel opencv opencv-devel
+  yum -y install gperf autoconf automake cmake freetype-devel gcc gcc-c++ git libtool make mercurial pkgconfig zlib-devel numactl-devel libass libass-devel opencv opencv-devel
 fi
 
 echo
@@ -343,7 +353,7 @@ curl -L -O https://www.freedesktop.org/software/fontconfig/release/fontconfig-${
 tar xvzf fontconfig-${FONTCONFIG_VER}.tar.gz
 cd fontconfig-${FONTCONFIG_VER}
 # autoreconf -ivf
-PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static  --enable-shared --with-pic
+PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared --with-pic
 make${MAKETHREADS}
 make install
 make distclean
@@ -361,16 +371,24 @@ fi
 
 cd ${OPT}/ffmpeg_sources
 rm -rf x264
-git clone --depth 1 git://git.videolan.org/x264
+git clone --depth 1 https://code.videolan.org/videolan/x264.git
 cd x264
-PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static  --enable-shared
-make${MAKETHREADS}
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" PATH="${OPT}/bin:$PATH" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared
+else
+  PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make distclean
 
 cd ${OPT}/ffmpeg_sources
 rm -rf x265
-hg clone https://bitbucket.org/multicoreware/x265
+git clone https://bitbucket.org/multicoreware/x265_git x265
 cd ${OPT}/ffmpeg_sources/x265/build/linux
 cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX:PATH="${OPT}/ffmpeg" -DENABLE_SHARED:bool=off -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ ../../source
 # cmake -DCMAKE_INSTALL_PREFIX:PATH=${OPT}/ffmpeg -DENABLE_SHARED:bool=off ../../source
@@ -389,9 +407,9 @@ make install
 make distclean
 
 cd ${OPT}/ffmpeg_sources
-curl -L -O https://downloads.sourceforge.net/project/lame/lame/3.99/lame-3.99.5.tar.gz
-tar xzvf lame-3.99.5.tar.gz
-cd lame-3.99.5
+curl -L -O https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+tar xzvf lame-3.100.tar.gz
+cd lame-3.100
 ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-shared --enable-nasm
 make${MAKETHREADS}
 make install
@@ -399,7 +417,7 @@ make distclean
 
 cd ${OPT}/ffmpeg_sources
 rm -rf opus
-git clone https://git.xiph.org/opus.git
+git clone https://github.com/xiph/opus
 cd opus
 autoreconf -fiv
 ./configure --prefix="${OPT}/ffmpeg" --enable-static --enable-shared
@@ -429,8 +447,17 @@ cd ${OPT}/ffmpeg_sources
 rm -rf libvpx
 git clone --depth 1 https://chromium.googlesource.com/webm/libvpx.git
 cd libvpx
-./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests
-make${MAKETHREADS}
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  #yum -q -y install yasm-devel
+  PATH="${OPT}/bin:$PATH" ./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests --as=nasm
+else
+  ./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make clean
 
@@ -492,8 +519,16 @@ cd ${OPT}/ffmpeg_sources
 rm -rf ffmpeg
 git clone --depth 1 git://source.ffmpeg.org/ffmpeg
 cd ffmpeg
-LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared${DISABLE_FFMPEGNETWORK}
-make${MAKETHREADS}
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared${DISABLE_FFMPEGNETWORK}
+else
+  LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared${DISABLE_FFMPEGNETWORK}
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make distclean
 hash -r
@@ -550,7 +585,7 @@ if [[ "$ENABLE_FONTCONFIG" = [yY] ]]; then
 cd ${OPT}/ffmpeg_sources/fontconfig-${FONTCONFIG_VER}
 make distclean
 # autoreconf -ivf
-PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static  --enable-shared --with-pic
+PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared --with-pic
 make${MAKETHREADS}
 make install
 make distclean
@@ -567,8 +602,16 @@ fi
 cd ${OPT}/ffmpeg_sources/x264
 make distclean
 git pull
-PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static
-make${MAKETHREADS}
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" PATH="${OPT}/bin:$PATH" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared
+else
+  PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --bindir="${OPT}/bin" --enable-static --enable-shared
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make distclean
 
@@ -592,8 +635,18 @@ make distclean
 cd ${OPT}/ffmpeg_sources/libvpx
 make clean
 git pull
-./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests --enable-vp9-highbitdepth --as=yasm
-make${MAKETHREADS}
+# ./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests --enable-vp9-highbitdepth --as=yasm
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  #yum -q -y install yasm-devel
+  PATH="${OPT}/bin:$PATH" ./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests --as=nasm
+else
+  ./configure --prefix="${OPT}/ffmpeg" --disable-examples --enable-static --enable-shared --disable-unit-tests
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make clean
 
@@ -611,8 +664,16 @@ fi
 cd ${OPT}/ffmpeg_sources/ffmpeg
 make distclean
 git pull
-LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared
-make${MAKETHREADS}
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared
+else
+  LD_LIBRARY_PATH=${OPT}/ffmpeg/lib PKG_CONFIG_PATH="${OPT}/ffmpeg/lib/pkgconfig" ./configure --prefix="${OPT}/ffmpeg" --extra-cflags="${EXTRACFLAG_FPICOPTS} -I${OPT}/ffmpeg/include" --extra-ldflags="-L${OPT}/ffmpeg/lib${LDFLAG_FPIC}" --bindir="${OPT}/bin" --pkg-config-flags="--static" --extra-libs=-lpthread --extra-libs=-lm --enable-gpl${FFMPEG_DEBUGOPT} --enable-nonfree --enable-libfdk-aac --enable-libfreetype --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 --enable-libx265${ENABLE_AVONEOPT}${ENABLE_DAVONEDOPT}${ENABLE_LIBASSOPT}${ENABLE_ZIMGOPT}${ENABLE_OPENCVOPT} --enable-swscale${ENABLE_FONTCONFIGOPT}${ENABLE_FPICOPT} --enable-shared
+fi
+if [[ "$NASM_SOURCEINSTALL" = [yY] ]]; then
+  PATH="${OPT}/bin:$PATH" make${MAKETHREADS}
+else
+  make${MAKETHREADS}
+fi
 make install
 make distclean
 hash -r
@@ -631,7 +692,7 @@ echo
 
 echo
 /opt/bin/ffmpeg -formats
-	
+  
 }
 
 phpext_no() {
@@ -650,141 +711,141 @@ phpext() {
 
   FFMPEG_PHPVERCHECK=$(php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1)
   if [[ "$FFMPEG_PHPVERCHECK" != '7' ]]; then
-	echo
-	echo "Install FFMPEG PHP extension..."
+  echo
+  echo "Install FFMPEG PHP extension..."
 
-	cd $DIR_TMP
-	rm -rf ffmpeg-php-git
-	git clone https://github.com/centminmod/ffmpeg-php ffmpeg-php-git
-	cd ffmpeg-php-git
-	# cd ffmpeg-php-${FFMPEGVER}
-	
-	make clean
-	phpize -clean
-	if [[ "$GD_ENABLE" = [yY] ]]; then
-		sed -i 's/PIX_FMT_RGBA32/PIX_FMT_RGB32/g' ffmpeg_frame.c
-		GDOPT=' --enable-skip-gd-check'
-	else
-		GDOPT=""
-	fi
-	phpize
-	
-	# mkdir -p /usr/local/include
-	# cd /opt/ffmpeg/include
-	# find . -name "*.h" -exec cp {} /usr/local/include \;
-	# find . -name "*.h" -exec cp {} /opt/ffmpeg/include \;
-	# ls -lah /usr/local/include
-	# ls -lah /opt/ffmpeg/include
+  cd $DIR_TMP
+  rm -rf ffmpeg-php-git
+  git clone https://github.com/centminmod/ffmpeg-php ffmpeg-php-git
+  cd ffmpeg-php-git
+  # cd ffmpeg-php-${FFMPEGVER}
+  
+  make clean
+  phpize -clean
+  if [[ "$GD_ENABLE" = [yY] ]]; then
+    sed -i 's/PIX_FMT_RGBA32/PIX_FMT_RGB32/g' ffmpeg_frame.c
+    GDOPT=' --enable-skip-gd-check'
+  else
+    GDOPT=""
+  fi
+  phpize
+  
+  # mkdir -p /usr/local/include
+  # cd /opt/ffmpeg/include
+  # find . -name "*.h" -exec cp {} /usr/local/include \;
+  # find . -name "*.h" -exec cp {} /opt/ffmpeg/include \;
+  # ls -lah /usr/local/include
+  # ls -lah /opt/ffmpeg/include
 
 # echo "/usr/local/include" > /etc/ld.so.conf.d/ffmpeg-include.conf
 # cat /etc/ld.so.conf.d/ffmpeg-include.conf
 # ldconfig
 
-	# mkdir -p /usr/local/include/libavcodec
-	# ln -s /usr/local/include/avcodec.h /usr/local/include/libavcodec/avcodec.h
+  # mkdir -p /usr/local/include/libavcodec
+  # ln -s /usr/local/include/avcodec.h /usr/local/include/libavcodec/avcodec.h
 
 # ln -s /opt/ffmpeg/include/libavcodec /usr/local/include/libavcodec
 # ln -s /opt/ffmpeg/include/libavformat /usr/local/include/libavformat
 # ln -s /opt/ffmpeg/include/libavutil /usr/local/include/libavutil
 
-	cd $DIR_TMP/ffmpeg-php-git
-	# http://stackoverflow.com/a/14947692/272648
-	
-	LD_LIBRARY_PATH=${OPT}/ffmpeg/lib LDFLAGS="-L${OPT}/ffmpeg/lib" CPPFLAGS="-I${OPT}/ffmpeg/include" ./configure --with-php-config=/usr/local/bin/php-config --with-ffmpeg=/opt/ffmpeg${GDOPT}
-	
-	# mv /opt/ffmpeg/include/libavutil/time.h /opt/ffmpeg/include/libavutil/time.h_
-	make${MAKETHREADS}
-	# mv /opt/ffmpeg/include/libavutil/time.h /opt/ffmpeg/include/libavutil/time.h_
-	make install
-	
-	FFMPEGCHECK=`grep 'extension=ffmpeg.so' ${CONFIGSCANDIR}/ffmpeg.ini `
-	if [ -z "$FFMPEGCHECK" ]; then
-		echo "" >> ${CONFIGSCANDIR}/ffmpeg.ini
-		echo "[ffmpeg]" >> ${CONFIGSCANDIR}/ffmpeg.ini
-		echo "extension=ffmpeg.so" >> ${CONFIGSCANDIR}/ffmpeg.ini
-	fi
+  cd $DIR_TMP/ffmpeg-php-git
+  # http://stackoverflow.com/a/14947692/272648
+  
+  LD_LIBRARY_PATH=${OPT}/ffmpeg/lib LDFLAGS="-L${OPT}/ffmpeg/lib" CPPFLAGS="-I${OPT}/ffmpeg/include" ./configure --with-php-config=/usr/local/bin/php-config --with-ffmpeg=/opt/ffmpeg${GDOPT}
+  
+  # mv /opt/ffmpeg/include/libavutil/time.h /opt/ffmpeg/include/libavutil/time.h_
+  make${MAKETHREADS}
+  # mv /opt/ffmpeg/include/libavutil/time.h /opt/ffmpeg/include/libavutil/time.h_
+  make install
+  
+  FFMPEGCHECK=`grep 'extension=ffmpeg.so' ${CONFIGSCANDIR}/ffmpeg.ini `
+  if [ -z "$FFMPEGCHECK" ]; then
+    echo "" >> ${CONFIGSCANDIR}/ffmpeg.ini
+    echo "[ffmpeg]" >> ${CONFIGSCANDIR}/ffmpeg.ini
+    echo "extension=ffmpeg.so" >> ${CONFIGSCANDIR}/ffmpeg.ini
+  fi
 
-	echo
-	echo "FFMPEG PHP Extension installed"	
-	echo "restarting php-fpm service ..."
-	echo ""
+  echo
+  echo "FFMPEG PHP Extension installed" 
+  echo "restarting php-fpm service ..."
+  echo ""
 
-	service php-fpm restart	
+  service php-fpm restart 
 
-	echo ""
-	echo "check phpinfo for FFMPEG PHP Extension..."
-	echo ""
+  echo ""
+  echo "check phpinfo for FFMPEG PHP Extension..."
+  echo ""
 
-	php --ri ffmpeg
+  php --ri ffmpeg
 
-	ffmpeg_err=$?
-	if [[ "$ffmpeg_err" -ne '0' ]]; then
-		rm -rf /etc/centminmod/php.d/ffmpeg.ini
-		service php-fpm restart
-		echo
-		echo "----------------------------------------------------------------"
-		echo "FAILED..."
-		echo "failed to install FFMPEG PHP Extension"
-		echo "FFMPEG PHP Extension has a high change of install failure"
-		echo "due to developer abandoning the project so if failed"
-		echo "the FFMPEG PHP Extension is not installable"
-		echo "----------------------------------------------------------------"
-		echo
-	fi
+  ffmpeg_err=$?
+  if [[ "$ffmpeg_err" -ne '0' ]]; then
+    rm -rf /etc/centminmod/php.d/ffmpeg.ini
+    service php-fpm restart
+    echo
+    echo "----------------------------------------------------------------"
+    echo "FAILED..."
+    echo "failed to install FFMPEG PHP Extension"
+    echo "FFMPEG PHP Extension has a high change of install failure"
+    echo "due to developer abandoning the project so if failed"
+    echo "the FFMPEG PHP Extension is not installable"
+    echo "----------------------------------------------------------------"
+    echo
+  fi
 
-	else
-		echo ""
-		echo "FFMPEG php extension does not support PHP 7.x"
-		echo ""
+  else
+    echo ""
+    echo "FFMPEG php extension does not support PHP 7.x"
+    echo ""
   fi # php version check
 
 }
 
 case "$1" in
-	install )
-		starttime=$(TZ=UTC date +%s.%N)
-		{
-		do_continue
-		install
-		# phpext
-		} 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
+  install )
+    starttime=$(TZ=UTC date +%s.%N)
+    {
+    do_continue
+    install
+    # phpext
+    } 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
 
 endtime=$(TZ=UTC date +%s.%N)
 
 INSTALLTIME=$(echo "scale=2;$endtime - $starttime"|bc )
 echo "" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
 echo "Total FFMPEG Source Compile Install Time: $INSTALLTIME seconds" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
-		;;
-	update )
-		starttime=$(TZ=UTC date +%s.%N)
-		{
-		do_continue
-		update
-		} 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
+    ;;
+  update )
+    starttime=$(TZ=UTC date +%s.%N)
+    {
+    do_continue
+    update
+    } 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
 
 endtime=$(TZ=UTC date +%s.%N)
 
 INSTALLTIME=$(echo "scale=2;$endtime - $starttime"|bc )
 echo "" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
 echo "Total FFMPEG Source Compile Install Time: $INSTALLTIME seconds" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_install_${DT}.log
-		;;		
-	php )
-		starttime=$(TZ=UTC date +%s.%N)
-		{
-		# php_quite=$2
-		# if [[ "$php_quite" != 'silent' ]]; then
-			# do_continue
-		# fi
-		phpext_no
-		} 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_phpext_install_${DT}.log
+    ;;    
+  php )
+    starttime=$(TZ=UTC date +%s.%N)
+    {
+    # php_quite=$2
+    # if [[ "$php_quite" != 'silent' ]]; then
+      # do_continue
+    # fi
+    phpext_no
+    } 2>&1 | tee ${CENTMINLOGDIR}/centminmod_ffmpeg_phpext_install_${DT}.log
 
 endtime=$(TZ=UTC date +%s.%N)
 
 INSTALLTIME=$(echo "scale=2;$endtime - $starttime"|bc )
 echo "" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_phpext_install_${DT}.log
 echo "Total FFMPEG PHP Extension Install Time: $INSTALLTIME seconds" >> ${CENTMINLOGDIR}/centminmod_ffmpeg_phpext_install_${DT}.log
-		;;			
-	* )
-		echo "$0 {install|update|php}"
-		;;
+    ;;      
+  * )
+    echo "$0 {install|update|php}"
+    ;;
 esac

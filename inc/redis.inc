@@ -1,7 +1,7 @@
 #######################################################
 checkredistar() {
 
-  if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.3' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.2' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.1' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.0' || "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]]; then
+  if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.3' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.2' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.1' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.0' || "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]]; then
     if [[ "$REDISPHP_GIT" != [yY] ]]; then
       REDISPHP_VER="$REDISPHPSEVEN_VER"
       PHPEXT_REDISLINKFILE="phpredis-${REDISPHP_VER}.tgz"
@@ -49,7 +49,7 @@ redisinstall() {
     REDIS_SUBMENU=$1
 
     if [[ "$REDIS_SUBMENU" = 'submenu' ]]; then
-        REDIS_PHPCURRENTVER=$(php -v | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
+        REDIS_PHPCURRENTVER=$(php -v 2>&1 | grep -v 'PHP Warning' | awk -F " " '{print $2}' | head -n1 | cut -d . -f1,2)
     fi
 
     PHPEXTDIRD=`cat /usr/local/bin/php-config | awk '/^extension_dir/ {extdir=$1} END {gsub(/\047|extension_dir|=|)/,"",extdir); print extdir}'`
@@ -69,7 +69,7 @@ fi
 
 checkredistar
 
-if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.3' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.2' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.1' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.0' || "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]]; then
+if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.3' || "$PHPMUVER" = '7.3' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.2' || "$PHPMUVER" = '7.2' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.1' || "$PHPMUVER" = '7.1' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$REDIS_PHPCURRENTVER" = '7.0' || "$PHPMUVER" = '7.0' || "$PHPMUVER" = 'NGDEBUG' || "$PHPSEVEN_CHECKVER" = '0' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.1' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '7.0' ]]; then
     cecho "Compiling PHP redis-${REDISPHP_VER} extension for PHP 7.x ..." $boldgreen
 
     pwd
@@ -114,6 +114,15 @@ if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NG
         else
             redis_zstd_opt=''
         fi
+        redis_check_lz4=$(grep -o 'enable-redis-lz4' config.m4)
+        if [[ "$redis_check_lz4" = 'enable-redis-lz4' ]]; then
+            if [[ ! "$(rpm -qa lz4-devel)" ]]; then
+                yum -q -y install lz4 lz4-devel
+            fi
+            redis_lzfour_opt=' --enable-redis-lz4 --with-liblz4'
+        else
+            redis_lzfour_opt=''
+        fi
         redis_check_lzf=$(grep -o 'enable-redis-lzf' config.m4)
         if [[ "$redis_check_lzf" = 'enable-redis-lzf' ]]; then
             if [[ ! "$(rpm -qa liblzf)" ]]; then
@@ -125,9 +134,20 @@ if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NG
             redis_lzf_opt=''
         fi
         if [[ -f "${PHPEXTDIRD}/igbinary.so" ]] && [ "$IGBINARY_INSTALL" == 'y' ]; then
-            ./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzf_opt}
+            if [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]]; then
+                # disable igbinary on PHP 8.0+ due to segfaulting
+                echo "redis php configure"
+                echo "./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+                ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
+            else
+                echo "redis php configure"
+                echo "./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+                ./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
+            fi
         else
-            ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzf_opt}
+            echo "redis php configure"
+            echo "./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+            ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
         fi
         make${MAKETHREADS}
         make install
@@ -151,6 +171,15 @@ if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NG
         else
             redis_zstd_opt=''
         fi
+        redis_check_lz4=$(grep -o 'enable-redis-lz4' config.m4)
+        if [[ "$redis_check_lz4" = 'enable-redis-lz4' ]]; then
+            if [[ ! "$(rpm -qa lz4-devel)" ]]; then
+                yum -q -y install lz4 lz4-devel
+            fi
+            redis_lzfour_opt=' --enable-redis-lz4 --with-liblz4'
+        else
+            redis_lzfour_opt=''
+        fi
         redis_check_lzf=$(grep -o 'enable-redis-lzf' config.m4)
         if [[ "$redis_check_lzf" = 'enable-redis-lzf' ]]; then
             if [[ ! "$(rpm -qa liblzf)" ]]; then
@@ -163,12 +192,25 @@ if [[ "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '8.0' || "$PHPMUVER" = 'NG
         fi
         if [[ -f "${PHPEXTDIRD}/igbinary.so" ]] && [ "$IGBINARY_INSTALL" == 'y' ]; then
             if [[ "$PHPMUVER" = '5.5' ]] || [[ "$INITIALINSTALL" = [yY] && "$(echo "$PHP_VERSION" | cut -d . -f1,2)" = '5.5' ]]; then
+                echo "php configure alt"
+                echo "./configure --with-php-config=/usr/local/bin/php-config"
                 ./configure --with-php-config=/usr/local/bin/php-config
             else
-                ./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzf_opt}
+                if [[ "$REDIS_PHPCURRENTVER" = '7.4' || "$REDIS_PHPCURRENTVER" = '8.0' || "$PHPMUVER" = '7.4' || "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]]; then
+                    # disable igbinary on PHP 8.0+ due to segfaulting
+                    echo "redis php configure alt"
+                    echo "./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+                    ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
+                else
+                    echo "redis php configure alt"
+                    echo "./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+                    ./configure --with-php-config=/usr/local/bin/php-config --enable-redis-igbinary${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
+                fi
             fi
         else
-            ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzf_opt}
+            echo "php configure alt"
+            echo "./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}"
+            ./configure --with-php-config=/usr/local/bin/php-config${redis_zstd_opt}${redis_lzfour_opt}${redis_lzf_opt}
         fi
         make${MAKETHREADS}
         make install   
@@ -214,5 +256,16 @@ else
     echo "$REDISSOCHECK"
     echo ""
 fi # redis.so check
+
+    # if [[ "$PHPMUVER" = '8.0' || "$PHPVER_ID" -ge '80000' || "$PHPMUVER" = 'NGDEBUG' ]] && [ -f "${CONFIGSCANDIR}/redis.ini" ]; then
+    #     # disable redis on PHP 8.0+ due to segfaulting
+    #     cecho "PHP 8.0 detected removing incompatible ${CONFIGSCANDIR}/redis.ini" $boldyellow
+    #     cecho "rm -f ${CONFIGSCANDIR}/redis.ini" $boldyellow
+    #     rm -f ${CONFIGSCANDIR}/redis.ini
+    #     echo
+    # fi
+    if [[ "$REDIS_SUBMENU" = 'submenu' ]]; then
+        cmservice php-fpm restart
+    fi
     fi # PHP_INSTALL=y
 }

@@ -113,12 +113,15 @@ if [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module
   LISTENOPT='ssl spdy http2'
   COMP_HEADER='spdy_headers_comp 5'
   SPDY_HEADER='add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_module' ]]; then
   HTTPTWO=y
-  if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/ | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
+  if [[ "$(grep -rn listen /usr/local/nginx/conf/conf.d/*.conf | grep -v '#' | grep 443 | grep ' ssl' | grep ' http2' | grep -o reuseport )" != 'reuseport' ]]; then
     # check if reuseport is supported for listen 443 port - only needs to be added once globally for all nginx vhosts
     NGXVHOST_CHECKREUSEPORT=$(grep --color -Ro SO_REUSEPORT /usr/src/kernels/* | head -n1 | awk -F ":" '{print $2}')
     if [[ "$NGXVHOST_CHECKREUSEPORT" = 'SO_REUSEPORT' ]]; then
@@ -132,9 +135,12 @@ elif [[ "$(nginx -V 2>&1 | grep -Eo 'with-http_v2_module')" = 'with-http_v2_modu
   fi
   COMP_HEADER='#spdy_headers_comp 5'
   SPDY_HEADER='#add_header Alternate-Protocol  443:npn-spdy/3;'
-  HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
-  HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
-  HTTPTWO_MAXREQUESTS='http2_max_requests 5000;'
+  # removed in nginx 1.19.7+
+  # http://hg.nginx.org/nginx/rev/827202ca1269
+  # http://hg.nginx.org/nginx/rev/f790816a0e87
+  #HTTPTWO_MAXFIELDSIZE='http2_max_field_size 16k;'
+  #HTTPTWO_MAXHEADERSIZE='http2_max_header_size 32k;'
+  #HTTPTWO_MAXREQUESTS='http2_max_requests 50000;'
 else
   HTTPTWO=n
   LISTENOPT='ssl spdy'
@@ -453,7 +459,50 @@ else
   SELFSIGNEDSSL_OU="$SELFSIGNEDSSL_OU"
 fi
 
-# self-signed ssl cert with SANs
+if [[ "$SELFSIGNEDSSL_ECDSA" = [yY] ]]; then
+  # self-signed ssl cert with SANs for ECDSA
+cat > /tmp/reqecc.cnf <<EOF
+[req]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = v3_req
+prompt = no
+[req_distinguished_name]
+C = ${SELFSIGNEDSSL_C}
+ST = ${SELFSIGNEDSSL_ST}
+L = ${SELFSIGNEDSSL_L}
+O = ${vhostname}
+OU = ${vhostname}
+CN = ${vhostname}
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+cat > /tmp/v3extecc.cnf <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = ${vhostname}
+DNS.2 = www.${vhostname}
+EOF
+
+  openssl ecparam -out ${vhostname}.key -name prime256v1 -genkey
+  openssl req -new -sha256 -key ${vhostname}.key -nodes -out ${vhostname}.csr -config /tmp/reqecc.cnf
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3extecc.cnf
+  openssl x509 -noout -text < ${vhostname}.crt
+
+  rm -f /tmp/reqecc.cnf
+  rm -f /tmp/v3extecc.cnf
+else
+  # self-signed ssl cert with SANs
 cat > /tmp/req.cnf <<EOF
 [req]
 default_bits       = 2048
@@ -486,20 +535,20 @@ subjectAltName = @alt_names
 DNS.1 = ${vhostname}
 DNS.2 = www.${vhostname}
 EOF
-
-echo
-cat /tmp/req.cnf
-echo
-cat /tmp/v3ext.cnf
-echo
-openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
-# openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
-openssl req -noout -text -in ${vhostname}.csr | grep DNS
-openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
-# openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
-
-rm -f /tmp/req.cnf
-rm -f /tmp/v3ext.cnf
+  echo
+  cat /tmp/req.cnf
+  echo
+  cat /tmp/v3ext.cnf
+  echo
+  openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -config /tmp/req.cnf
+  # openssl req -new -newkey rsa:2048 -sha256 -nodes -out ${vhostname}.csr -keyout ${vhostname}.key -subj "/C=${SELFSIGNEDSSL_C}/ST=${SELFSIGNEDSSL_ST}/L=${SELFSIGNEDSSL_L}/O=${vhostname}/OU=${vhostname}/CN=${vhostname}"
+  openssl req -noout -text -in ${vhostname}.csr | grep DNS
+  openssl x509 -req -days 36500 -sha256 -in ${vhostname}.csr -signkey ${vhostname}.key -out ${vhostname}.crt -extfile /tmp/v3ext.cnf
+  # openssl req -x509 -nodes -days 36500 -sha256 -newkey rsa:2048 -keyout ${vhostname}.key -out ${vhostname}.crt -config /tmp/req.cnf
+  
+  rm -f /tmp/req.cnf
+  rm -f /tmp/v3ext.cnf
+fi
 
 echo
 cecho "---------------------------------------------------------------" $boldyellow
@@ -777,7 +826,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
@@ -875,7 +924,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
   $COMP_HEADER;
   ssl_buffer_size 1369;
   ssl_session_tickets on;
@@ -977,7 +1026,7 @@ server {
   add_header X-Xss-Protection "1; mode=block" always;
   add_header X-Content-Type-Options "nosniff" always;
   #add_header Referrer-Policy "strict-origin-when-cross-origin";
-  #add_header Feature-Policy "accelerometer 'none'; camera 'none'; geolocation 'none'; gyroscope 'none'; magnetometer 'none'; microphone 'none'; payment 'none'; usb 'none'";
+  #add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
   # limit_conn limit_per_ip 16;
   # ssi  on;
